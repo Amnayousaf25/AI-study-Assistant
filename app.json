@@ -18,6 +18,7 @@
     },
     "android": {
       "package": "com.amnayousuf.aistudyassistant",
+      "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -42,13 +43,15 @@
           "photosPermission": "The app accesses your photos to let you share them with Gemini AI.",
           "cameraPermission": "The app accesses your camera to let you take photos for Gemini AI analysis."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "076a2cfe-96b4-4e90-8e9c-9520ce02b932"
+        "projectId": "a53bb3c2-97ab-428f-8210-46ecc2014a90"
       }
-    }
+    },
+    "owner": "amna_yousaf"
   }
 }
