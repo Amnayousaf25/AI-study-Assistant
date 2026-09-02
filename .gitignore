@@ -2,6 +2,8 @@
 
 # dependencies
 node_modules/
+.pnp
+.pnp.js
 
 # Expo
 .expo/
@@ -17,25 +19,39 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+*.keystore
 
-# Metro
+# Metro & Bundler
 .metro-health-check*
 
-# debug
+# Debug & logs
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
 
-# macOS
+# OS files
 .DS_Store
 *.pem
+Thumbs.db
 
-# local env files
+# Sensitive & Environment configuration (NEVER COMMIT)
+.env
+.env.*
 .env*.local
+*.env
+*.env.local
 
-# typescript
+# IDE & Editor files
+.vscode/
+.idea/
+.claude/
+.gemini/
+scratch/
+
+# TypeScript
 *.tsbuildinfo
 
-# generated native folders
+# Generated native folders
 /ios
 /android
