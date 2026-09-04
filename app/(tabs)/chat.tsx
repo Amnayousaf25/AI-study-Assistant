@@ -21,6 +21,7 @@ import { ChatInput, ImageAttachment } from '../../components/ChatInput';
 import { ScrollToBottomButton } from '../../components/ScrollToBottomButton';
 import { ImageAttachmentModal } from '../../components/ImageAttachmentModal';
 import { ImageViewerModal } from '../../components/ImageViewerModal';
+import { HistoryDrawer } from '../../components/HistoryDrawer';
 import { useChat, GEMINI_MODEL } from '../../src/context/ChatContext';
 
 export default function ChatScreen() {
@@ -32,10 +33,14 @@ export default function ChatScreen() {
     isLoading,
     activeConversationId,
     activeConversation,
+    conversations,
     handleSend,
     handleRegenerate,
     handleStopGeneration,
     handleNewChat,
+    handleSelectConversation,
+    handleDeleteConversation,
+    handleClearAllConversations,
     isDark,
     toggleTheme,
     toggleFavoriteMessage,
@@ -47,6 +52,7 @@ export default function ChatScreen() {
   const [isAttachModalVisible, setIsAttachModalVisible] = useState(false);
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const listRef = useRef<FlatList<Message>>(null);
   const isInitialMount = useRef(true);
@@ -225,6 +231,16 @@ export default function ChatScreen() {
             {/* Header Actions */}
             <View style={styles.headerActions}>
               <Pressable
+                onPress={() => setIsHistoryOpen(true)}
+                style={[styles.headerBtn, { backgroundColor: colors.btnBg, borderColor: colors.border }]}
+                accessibilityLabel="Open Chat History Sidebar"
+                hitSlop={6}
+              >
+                <Ionicons name="time-outline" size={16} color={colors.btnText} />
+                <Text style={[styles.newBtnText, { color: colors.btnText }]}>History</Text>
+              </Pressable>
+
+              <Pressable
                 onPress={onNewChatPress}
                 style={[styles.headerBtn, { backgroundColor: colors.btnBg, borderColor: colors.border }]}
                 accessibilityLabel="New Chat"
@@ -299,6 +315,25 @@ export default function ChatScreen() {
         imageUri={previewImageUri}
         onClose={() => setPreviewImageUri(null)}
       />
+
+      {/* ChatGPT-Style Sidebar History Drawer */}
+      <HistoryDrawer
+        visible={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        onSelectConversation={(id) => {
+          handleSelectConversation(id);
+          setIsHistoryOpen(false);
+        }}
+        onNewChat={() => {
+          onNewChatPress();
+          setIsHistoryOpen(false);
+        }}
+        onDeleteConversation={handleDeleteConversation}
+        onClearAll={handleClearAllConversations}
+        isDark={isDark}
+      />
     </View>
   );
 }
@@ -313,7 +348,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerRow: {
-    maxWidth: 480,
+    maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
     flexDirection: 'row',
@@ -388,7 +423,7 @@ const styles = StyleSheet.create({
   chatArea: {
     flex: 1,
     width: '100%',
-    maxWidth: 480,
+    maxWidth: 720,
     alignSelf: 'center',
   },
   listContent: {
@@ -399,7 +434,7 @@ const styles = StyleSheet.create({
   },
   inputWrapper: {
     width: '100%',
-    maxWidth: 480,
+    maxWidth: 720,
     alignSelf: 'center',
   },
 });

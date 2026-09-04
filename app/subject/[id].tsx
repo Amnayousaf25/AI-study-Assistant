@@ -98,7 +98,7 @@ export default function SubjectDetailScreen() {
         paddingTop: Math.max(insets.top, 12),
         paddingBottom: Math.max(insets.bottom, 16),
       }}
-      className={`flex-1 ${isDark ? 'bg-slate-950' : 'bg-slate-50'}`}
+      className={`flex-1 ${isDark ? 'dark bg-slate-950' : 'bg-slate-50'}`}
     >
       {/* Header */}
       <View className="px-4 pb-3 border-b border-slate-200/80 dark:border-slate-800 flex-row items-center justify-between">

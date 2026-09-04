@@ -72,9 +72,9 @@ export default function DedicatedQuizScreen() {
           </Text>
           <Pressable
             style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.replace('/(tabs)/quiz')}
+            onPress={() => router.replace('/(tabs)/study')}
           >
-            <Text style={styles.primaryButtonText}>Go to Quiz Config</Text>
+            <Text style={styles.primaryButtonText}>Go to Study Hub</Text>
           </Pressable>
         </View>
       </View>
@@ -582,7 +582,16 @@ export default function DedicatedQuizScreen() {
       </ScrollView>
 
       {/* Bottom Pinned Controls */}
-      <View style={[styles.bottomBar, { borderTopColor: colors.cardBorder, backgroundColor: colors.card }]}>
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            borderTopColor: colors.cardBorder,
+            backgroundColor: colors.card,
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
+      >
         <View style={styles.bottomBarRow}>
           <Pressable
             onPress={() => setCurrentStep((prev) => Math.max(prev - 1, 0))}
@@ -696,7 +705,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   innerWrapper: {
-    maxWidth: 480,
+    maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
   },
@@ -792,7 +801,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   bottomBarRow: {
-    maxWidth: 480,
+    maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
     flexDirection: 'row',

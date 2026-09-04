@@ -243,7 +243,7 @@ function ResponsiveTabBar({ state, descriptors, navigation }: BottomTabBarProps)
         backgroundColor: isDark ? '#090d16' : '#ffffff',
         borderTopColor: isDark ? '#1e293b' : '#f1f5f9',
         borderTopWidth: 1,
-        paddingBottom: Platform.OS === 'ios' ? 24 : Math.max(insets.bottom, 8),
+        paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 20 : 10),
         paddingTop: 6,
       }}
       className="flex-row justify-around items-center shadow-lg"

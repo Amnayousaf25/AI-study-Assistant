@@ -1,4 +1,11 @@
-import { GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODEL_FALLBACKS, GeminiRequestError } from '../context/ChatContext';
+import {
+  getEffectiveApiKey,
+  API_KEY_PLACEHOLDER,
+  GEMINI_MODEL,
+  GEMINI_MODEL_FALLBACKS,
+  GeminiRequestError,
+  STUDY_ASSISTANT_SYSTEM_PROMPT,
+} from '../context/ChatContext';
 import {
   QuizQuestion,
   StudySubject,
@@ -10,13 +17,58 @@ import {
   PresentationSlide,
 } from '../types/study';
 
-async function sendGeminiParts(
+export function getFriendlyErrorMessage(err: unknown): string {
+  if (err instanceof GeminiRequestError) {
+    if (err.kind === 'configuration') {
+      return 'AI service configuration is unavailable. Please check your API configuration.';
+    }
+    if (err.kind === 'rate-limit' || err.status === 429) {
+      return 'AI is temporarily busy. Please try again in a moment.';
+    }
+    if (err.kind === 'unauthorized' || err.status === 401 || err.status === 403) {
+      return 'AI service authorization failed. Please check the API configuration.';
+    }
+    if (err.status === 400) {
+      return 'The AI request could not be processed. Please try again.';
+    }
+    if (err.kind === 'network') {
+      return 'Unable to connect to the AI service. Check your internet connection.';
+    }
+    if (err.status && err.status >= 500) {
+      return 'The AI service is temporarily unavailable. Please try again later.';
+    }
+    if (err.kind === 'timeout') {
+      return 'The AI request timed out. Please try again.';
+    }
+    if (err.apiMessage) {
+      return `AI Request Error: ${err.apiMessage}`;
+    }
+  }
+
+  if (err instanceof Error) {
+    const msg = err.message || '';
+    if (msg.includes('429')) return 'AI is temporarily busy. Please try again in a moment.';
+    if (msg.includes('401') || msg.includes('403')) return 'AI service authorization failed. Please check the API configuration.';
+    if (msg.includes('400')) return 'The AI request could not be processed. Please try again.';
+    if (msg.includes('Network') || msg.includes('fetch')) return 'Unable to connect to the AI service. Check your internet connection.';
+  }
+
+  return 'Something went wrong while generating this content. Please try again.';
+}
+
+export async function sendGeminiParts(
   parts: any[],
   outerSignal?: AbortSignal,
   timeoutMs: number = 60000
 ): Promise<string> {
-  if (!GEMINI_API_KEY?.trim()) {
-    throw new GeminiRequestError('configuration');
+  const apiKey = getEffectiveApiKey();
+  if (!apiKey || apiKey === API_KEY_PLACEHOLDER) {
+    throw new GeminiRequestError(
+      'configuration',
+      undefined,
+      undefined,
+      'API key is not configured. Please add your Gemini API key in Settings.'
+    );
   }
 
   const controller = new AbortController();
@@ -27,6 +79,9 @@ async function sendGeminiParts(
   }
 
   const requestBody = JSON.stringify({
+    system_instruction: {
+      parts: [{ text: STUDY_ASSISTANT_SYSTEM_PROMPT }],
+    },
     contents: [
       {
         role: 'user',
@@ -40,7 +95,7 @@ async function sendGeminiParts(
   try {
     for (const modelName of GEMINI_MODEL_FALLBACKS) {
       try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -49,22 +104,51 @@ async function sendGeminiParts(
         });
 
         if (response.status === 404) {
+          console.warn(`[Gemini API Warning] Model ${modelName} returned 404 Not Found, attempting fallback model...`);
           continue;
         }
 
         if (!response.ok) {
-          throw new GeminiRequestError('http', response.status);
+          let apiMsg = response.statusText || 'API Request Failed';
+          try {
+            const errJson = await response.json();
+            if (errJson?.error?.message) {
+              apiMsg = errJson.error.message;
+            }
+          } catch {
+            // response body was not JSON
+          }
+
+          console.warn(`[Gemini Request Failed] status: ${response.status}, model: ${modelName}, message: ${apiMsg}`);
+
+          let errKind: any = 'http';
+          if (response.status === 429) errKind = 'rate-limit';
+          else if (response.status === 401 || response.status === 403) errKind = 'unauthorized';
+
+          const requestError = new GeminiRequestError(errKind, response.status, response.statusText, apiMsg);
+
+          // For 429 rate limit or 404 model not found, try next model in fallback list
+          if (response.status === 429 || response.status === 404) {
+            lastError = requestError;
+            console.warn(`[Gemini API Warning] Model ${modelName} returned status ${response.status}, attempting fallback model...`);
+            continue;
+          }
+
+          throw requestError;
         }
 
         const data = await response.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text;
-        throw new GeminiRequestError('empty-response');
+        if (text && typeof text === 'string' && text.trim().length > 0) {
+          return text;
+        }
+
+        throw new GeminiRequestError('empty-response', response.status, response.statusText, 'AI returned an empty response candidate.');
       } catch (err: any) {
         if (err?.name === 'AbortError' || controller.signal.aborted) {
-          throw new GeminiRequestError('timeout');
+          throw new GeminiRequestError('timeout', undefined, undefined, 'Request timed out after 60s.');
         }
-        if (err instanceof GeminiRequestError && err.kind === 'http' && err.status !== 404) {
+        if (err instanceof GeminiRequestError && err.status && err.status !== 404 && err.status !== 429) {
           throw err;
         }
         lastError = err;
@@ -75,7 +159,7 @@ async function sendGeminiParts(
   }
 
   if (lastError instanceof GeminiRequestError) throw lastError;
-  throw new GeminiRequestError('network');
+  throw new GeminiRequestError('network', undefined, undefined, 'Unable to establish connection to Google Gemini API.');
 }
 
 function cleanJsonText(raw: string): string {
@@ -102,27 +186,67 @@ function cleanJsonText(raw: string): string {
 export async function generateQuiz(
   topic: string,
   difficulty: QuizDifficulty = 'Medium',
-  count: number = 5
+  count: number = 5,
+  documentContent?: string,
+  base64Data?: string,
+  mimeType: string = 'application/pdf'
 ): Promise<QuizQuestion[]> {
-  const prompt = `Generate a ${count}-question multiple choice quiz on the topic "${topic}" (${difficulty} difficulty).
-Return ONLY a valid JSON array of objects with NO markdown formatting or commentary:
+  const parts: any[] = [];
+
+  let prompt = `Generate a ${count}-question multiple choice quiz on "${topic}" (${difficulty} difficulty).`;
+
+  if (documentContent && documentContent.trim().length > 20) {
+    prompt += `\n\nUse the following document text as the primary source material for questions and explanations:\n"""\n${documentContent.slice(0, 8000)}\n"""`;
+  }
+
+  prompt += `\n\nReturn ONLY a valid JSON array of objects with NO markdown formatting or commentary:
 [
   {
     "id": "q1",
-    "question": "Clear question text",
+    "question": "Clear question text based on the study material",
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correctAnswerIndex": 0,
     "explanation": "Concise step-by-step explanation"
   }
 ]`;
 
-  const raw = await sendGeminiParts([{ text: prompt }], undefined, 60000);
+  parts.push({ text: prompt });
+
+  if (base64Data && (!documentContent || documentContent.trim().length < 50)) {
+    parts.unshift({
+      inlineData: {
+        mimeType: mimeType || 'application/pdf',
+        data: base64Data,
+      },
+    });
+  }
+
+  let raw = '';
+  try {
+    raw = await sendGeminiParts(parts, undefined, 60000);
+  } catch (err) {
+    if (
+      base64Data &&
+      documentContent &&
+      documentContent.trim().length > 30 &&
+      err instanceof GeminiRequestError &&
+      err.kind !== 'rate-limit' &&
+      err.kind !== 'unauthorized' &&
+      err.kind !== 'configuration' &&
+      err.kind !== 'network'
+    ) {
+      console.warn('Multimodal quiz generation failed, retrying text prompt:', err);
+      raw = await sendGeminiParts([{ text: prompt }], undefined, 60000);
+    } else {
+      throw err;
+    }
+  }
   const cleaned = cleanJsonText(raw);
 
   try {
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      throw new Error('AI returned an invalid quiz format. Please try again.');
+      throw new Error('AI returned an invalid quiz format.');
     }
 
     return parsed.map((item, idx) => {
@@ -148,7 +272,7 @@ Return ONLY a valid JSON array of objects with NO markdown formatting or comment
     });
   } catch (err: any) {
     console.error('Quiz parsing error:', err, 'Raw response:', raw);
-    throw new Error('AI returned an invalid quiz format. Please try again.');
+    throw new GeminiRequestError('response', undefined, undefined, 'AI returned invalid quiz JSON format.');
   }
 }
 
@@ -201,8 +325,21 @@ Schema:
   try {
     raw = await sendGeminiParts(parts);
   } catch (err) {
-    console.warn('Multimodal summary request failed, retrying text prompt:', err);
-    raw = await sendGeminiParts([{ text: prompt }]);
+    if (
+      base64Data &&
+      content &&
+      content.trim().length > 30 &&
+      err instanceof GeminiRequestError &&
+      err.kind !== 'rate-limit' &&
+      err.kind !== 'unauthorized' &&
+      err.kind !== 'configuration' &&
+      err.kind !== 'network'
+    ) {
+      console.warn('Multimodal summary request failed, retrying text prompt:', err);
+      raw = await sendGeminiParts([{ text: prompt }]);
+    } else {
+      throw err;
+    }
   }
 
   const cleaned = cleanJsonText(raw);
@@ -219,14 +356,68 @@ Schema:
     };
   } catch (err) {
     console.error('Summary parse error:', err, 'Raw:', raw);
-    return {
-      title: `${subject || 'Study'} Summary`,
-      mainConcept: raw || 'Comprehensive overview generated by AI Tutor.',
-      keyPoints: ['Core topic overview and key takeaways.'],
-      importantTerms: [],
-      quickRevision: 'Review key formulas and principles for your exam.',
-      subject,
-    };
+    throw new GeminiRequestError('response', undefined, undefined, 'AI returned invalid summary JSON format.');
+  }
+}
+
+export interface GeneratedFlashcard {
+  id: string;
+  front: string;
+  back: string;
+}
+
+export async function generateFlashcards(
+  topic: string,
+  documentContent?: string,
+  base64Data?: string,
+  mimeType: string = 'application/pdf'
+): Promise<GeneratedFlashcard[]> {
+  const parts: any[] = [];
+  const topicToUse = topic.trim() || 'General Study Material';
+
+  let prompt = `You are an expert academic tutor. Create 6 high-yield study flashcards for topic "${topicToUse}".`;
+
+  if (documentContent && documentContent.trim().length > 30) {
+    prompt += `\n\nUse the following study text as primary source material:\n"""\n${documentContent.slice(0, 8000)}\n"""`;
+  }
+
+  prompt += `\n\nYou MUST return ONLY a valid JSON array of objects with NO markdown formatting or commentary:
+[
+  {
+    "id": "fc1",
+    "front": "Clear Question or Key Term or Core Concept",
+    "back": "Detailed Answer or Definition or Explanation"
+  }
+]`;
+
+  parts.push({ text: prompt });
+
+  if (base64Data && (!documentContent || documentContent.trim().length < 50)) {
+    parts.unshift({
+      inlineData: {
+        mimeType: mimeType || 'application/pdf',
+        data: base64Data,
+      },
+    });
+  }
+
+  const raw = await sendGeminiParts(parts);
+  const cleaned = cleanJsonText(raw);
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new Error('Invalid flashcard array returned by AI.');
+    }
+
+    return parsed.map((item, idx) => ({
+      id: String(item.id || `fc_${Date.now()}_${idx}`),
+      front: String(item.front || item.question || item.term || `Concept ${idx + 1}`),
+      back: String(item.back || item.answer || item.definition || 'Detailed explanation.'),
+    }));
+  } catch (err: any) {
+    console.error('Flashcards JSON parsing error:', err, 'Raw:', raw);
+    throw new GeminiRequestError('response', undefined, undefined, 'AI returned invalid flashcards JSON format.');
   }
 }
 

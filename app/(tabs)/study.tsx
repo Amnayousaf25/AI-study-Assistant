@@ -25,12 +25,16 @@ import {
   SendIcon,
   SunIcon,
   MoonIcon,
+  QuizIcon,
+  LayersIcon,
 } from '../../components/Icons';
 import { useStudy } from '../../src/context/StudyContext';
 import { useChat } from '../../src/context/ChatContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { StudyDocument } from '../../src/types/study';
 import { SummarizerModal } from '../../components/SummarizerModal';
+import { QuizModal } from '../../components/QuizModal';
+import { FlashcardsModal } from '../../components/FlashcardsModal';
 import { askDocumentQuestion } from '../../src/services/aiService';
 
 export default function StudyScreen() {
@@ -61,6 +65,18 @@ export default function StudyScreen() {
   const [isAnswering, setIsAnswering] = useState(false);
   const [qaStatusText, setQaStatusText] = useState('Processing document...');
   const [qaError, setQaError] = useState<string | null>(null);
+
+  // Quiz Modal State
+  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
+  const [quizTopic, setQuizTopic] = useState('');
+  const [quizDocText, setQuizDocText] = useState<string | undefined>(undefined);
+  const [quizDocBase64, setQuizDocBase64] = useState<string | undefined>(undefined);
+  const [quizDocMime, setQuizDocMime] = useState<string | undefined>(undefined);
+
+  // Flashcards Modal State
+  const [isFlashcardsOpen, setIsFlashcardsOpen] = useState(false);
+  const [flashcardTopic, setFlashcardTopic] = useState('');
+  const [flashcardDocText, setFlashcardDocText] = useState<string | undefined>(undefined);
 
   const handleUploadPDF = async () => {
     await pickAndUploadDocument();
@@ -178,38 +194,102 @@ export default function StudyScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-md mx-auto space-y-5 gap-5">
-          {/* Quick Action Upload Tiles */}
-          <View className="flex-row gap-3">
-            <Pressable
-              onPress={handleUploadPDF}
-              disabled={isProcessingDoc}
-              className="flex-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex-row items-center space-x-2.5 gap-2.5 active:scale-[0.98] transition-all min-h-[48px]"
-            >
-              <View className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 items-center justify-center">
-                <PdfIcon size={22} color="#6366f1" />
-              </View>
-              <View className="flex-1">
-                <Text numberOfLines={1} className="text-xs font-bold text-slate-900 dark:text-slate-50">
-                  Upload Material
-                </Text>
-                <Text numberOfLines={1} className="text-[10px] text-slate-400">PDF, DOC, TXT</Text>
-              </View>
-            </Pressable>
+          {/* Quick Study & Learning Tools Suite */}
+          <View className="space-y-3 gap-3">
+            <Text className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1">
+              Study Tools
+            </Text>
 
-            <Pressable
-              onPress={() => setIsCreateNoteOpen(true)}
-              className="flex-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex-row items-center space-x-2.5 gap-2.5 active:scale-[0.98] transition-all min-h-[48px]"
-            >
-              <View className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/70 items-center justify-center">
-                <BrainIcon size={22} color="#d97706" />
-              </View>
-              <View className="flex-1">
-                <Text numberOfLines={1} className="text-xs font-bold text-slate-900 dark:text-slate-50">
-                  Create Note
-                </Text>
-                <Text numberOfLines={1} className="text-[10px] text-slate-400">Type or paste</Text>
-              </View>
-            </Pressable>
+            {/* Grid Row 1 */}
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={handleUploadPDF}
+                disabled={isProcessingDoc}
+                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex-row items-center space-x-2.5 gap-2.5 active:scale-[0.98] transition-all min-h-[48px]"
+              >
+                <View className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 items-center justify-center">
+                  <PdfIcon size={22} color="#6366f1" />
+                </View>
+                <View className="flex-1">
+                  <Text numberOfLines={1} className="text-xs font-bold text-slate-900 dark:text-slate-50">
+                    Upload Material
+                  </Text>
+                  <Text numberOfLines={1} className="text-[10px] text-slate-400">PDF, DOC, TXT</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setIsCreateNoteOpen(true)}
+                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex-row items-center space-x-2.5 gap-2.5 active:scale-[0.98] transition-all min-h-[48px]"
+              >
+                <View className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/70 items-center justify-center">
+                  <BrainIcon size={22} color="#d97706" />
+                </View>
+                <View className="flex-1">
+                  <Text numberOfLines={1} className="text-xs font-bold text-slate-900 dark:text-slate-50">
+                    Create Note
+                  </Text>
+                  <Text numberOfLines={1} className="text-[10px] text-slate-400">Type or paste</Text>
+                </View>
+              </Pressable>
+            </View>
+
+            {/* Grid Row 2 */}
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={() => {
+                  setQuizTopic('');
+                  setIsQuizModalOpen(true);
+                }}
+                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex-row items-center space-x-2.5 gap-2.5 active:scale-[0.98] transition-all min-h-[48px]"
+              >
+                <View className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/70 items-center justify-center">
+                  <QuizIcon size={22} color="#d97706" />
+                </View>
+                <View className="flex-1">
+                  <Text numberOfLines={1} className="text-xs font-bold text-slate-900 dark:text-slate-50">
+                    Generate Quiz
+                  </Text>
+                  <Text numberOfLines={1} className="text-[10px] text-slate-400">Practice exam MCQs</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setIsSummarizerOpen(true)}
+                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex-row items-center space-x-2.5 gap-2.5 active:scale-[0.98] transition-all min-h-[48px]"
+              >
+                <View className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 items-center justify-center">
+                  <SparklesIcon size={22} color="#059669" />
+                </View>
+                <View className="flex-1">
+                  <Text numberOfLines={1} className="text-xs font-bold text-slate-900 dark:text-slate-50">
+                    Summarize
+                  </Text>
+                  <Text numberOfLines={1} className="text-[10px] text-slate-400">Revision cards</Text>
+                </View>
+              </Pressable>
+            </View>
+
+            {/* Grid Row 3 */}
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={() => {
+                  setFlashcardTopic('');
+                  setIsFlashcardsOpen(true);
+                }}
+                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs flex-row items-center space-x-2.5 gap-2.5 active:scale-[0.98] transition-all min-h-[48px]"
+              >
+                <View className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/70 items-center justify-center">
+                  <LayersIcon size={22} color="#9333ea" />
+                </View>
+                <View className="flex-1">
+                  <Text numberOfLines={1} className="text-xs font-bold text-slate-900 dark:text-slate-50">
+                    Flashcards
+                  </Text>
+                  <Text numberOfLines={1} className="text-[10px] text-slate-400">Interactive study cards</Text>
+                </View>
+              </Pressable>
+            </View>
           </View>
 
           {/* Library Cards List */}
@@ -273,8 +353,22 @@ export default function StudyScreen() {
                       </Pressable>
                     </View>
 
-                    {/* Action Buttons: Ask AI, Summarize, Chat */}
-                    <View className="flex-row items-center gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                    {/* Action Buttons: Ask AI, Flashcards, Quiz, Summarize, Chat */}
+                    <View className="flex-row items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex-wrap">
+                      <Pressable
+                        onPress={() => {
+                          setFlashcardTopic(doc.name.replace(/\.[^/.]+$/, ''));
+                          setFlashcardDocText(doc.extractedText);
+                          setIsFlashcardsOpen(true);
+                        }}
+                        className="flex-1 flex-row items-center justify-center bg-purple-50 dark:bg-purple-950/70 border border-purple-200 dark:border-purple-800/80 py-2 px-2.5 rounded-xl active:bg-purple-100 min-h-[36px] active:scale-95 transition-all"
+                      >
+                        <LayersIcon size={13} color="#9333ea" />
+                        <Text className="text-xs font-bold text-purple-700 dark:text-purple-300 ml-1">
+                          Cards 🎴
+                        </Text>
+                      </Pressable>
+
                       <Pressable
                         onPress={() => {
                           setSelectedDocForQA(doc);
@@ -282,28 +376,35 @@ export default function StudyScreen() {
                           setDocAnswer(null);
                           setQaError(null);
                         }}
-                        className="flex-1 flex-row items-center justify-center bg-indigo-600 active:bg-indigo-700 py-2 rounded-xl shadow-xs min-h-[36px] active:scale-95 transition-all"
+                        className="flex-1 flex-row items-center justify-center bg-indigo-600 active:bg-indigo-700 py-2 px-2.5 rounded-xl shadow-xs min-h-[36px] active:scale-95 transition-all"
                       >
                         <ChatIcon size={13} color="#ffffff" />
-                        <Text className="text-xs font-bold text-white ml-1.5">Ask AI</Text>
+                        <Text className="text-xs font-bold text-white ml-1">Ask AI</Text>
                       </Pressable>
 
                       <Pressable
-                        onPress={() => handleOpenSummarizerForDoc(doc)}
-                        className="flex-1 flex-row items-center justify-center bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/80 py-2 rounded-xl active:bg-indigo-100 min-h-[36px] active:scale-95 transition-all"
+                        onPress={() => {
+                          setQuizTopic(doc.name.replace(/\.[^/.]+$/, ''));
+                          setQuizDocText(doc.extractedText);
+                          setQuizDocBase64(doc.base64Data);
+                          setQuizDocMime(doc.mimeType);
+                          setIsQuizModalOpen(true);
+                        }}
+                        className="flex-1 flex-row items-center justify-center bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800/80 py-2 px-2.5 rounded-xl active:bg-amber-100 min-h-[36px] active:scale-95 transition-all"
                       >
-                        <BrainIcon size={13} color="#6366f1" />
-                        <Text className="text-xs font-bold text-indigo-600 dark:text-indigo-400 ml-1.5">
-                          Summarize
+                        <QuizIcon size={13} color="#d97706" />
+                        <Text className="text-xs font-bold text-amber-700 dark:text-amber-300 ml-1">
+                          Quiz
                         </Text>
                       </Pressable>
 
                       <Pressable
-                        onPress={() => handleChatWithDocInMainChat(doc)}
-                        className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 active:bg-slate-200 min-h-[36px] justify-center"
+                        onPress={() => handleOpenSummarizerForDoc(doc)}
+                        className="flex-1 flex-row items-center justify-center bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/80 py-2 px-2.5 rounded-xl active:bg-indigo-100 min-h-[36px] active:scale-95 transition-all"
                       >
-                        <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          Chat →
+                        <BrainIcon size={13} color="#6366f1" />
+                        <Text className="text-xs font-bold text-indigo-600 dark:text-indigo-400 ml-1">
+                          Summary
                         </Text>
                       </Pressable>
                     </View>
@@ -493,6 +594,32 @@ export default function StudyScreen() {
         }}
         initialText={selectedDocForSummary?.extractedText || ''}
         document={selectedDocForSummary || undefined}
+      />
+
+      {/* 4. Quiz Generator Modal */}
+      <QuizModal
+        visible={isQuizModalOpen}
+        onClose={() => {
+          setIsQuizModalOpen(false);
+          setQuizDocText(undefined);
+          setQuizDocBase64(undefined);
+          setQuizDocMime(undefined);
+        }}
+        initialTopic={quizTopic}
+        documentText={quizDocText}
+        documentBase64={quizDocBase64}
+        documentMimeType={quizDocMime}
+      />
+
+      {/* 5. Flashcards Modal */}
+      <FlashcardsModal
+        visible={isFlashcardsOpen}
+        onClose={() => {
+          setIsFlashcardsOpen(false);
+          setFlashcardDocText(undefined);
+        }}
+        initialTopic={flashcardTopic}
+        documentText={flashcardDocText}
       />
     </View>
   );

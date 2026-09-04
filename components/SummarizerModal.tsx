@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useStudy } from '../src/context/StudyContext';
 import { useChat } from '../src/context/ChatContext';
+import { getFriendlyErrorMessage } from '../src/services/aiService';
 import { SummaryLength, SummaryResult, StudyDocument } from '../src/types/study';
 
 interface SummarizerModalProps {
@@ -106,7 +107,7 @@ export const SummarizerModal: React.FC<SummarizerModalProps> = ({
       if (err?.message === 'TIMEOUT') {
         setErrorMsg('The AI request took too long (timed out after 25s). Please try again.');
       } else {
-        setErrorMsg('Unable to generate summary. Please check your connection and try again.');
+        setErrorMsg(getFriendlyErrorMessage(err));
       }
     } finally {
       setIsGenerating(false);
@@ -174,7 +175,7 @@ ${result.quickRevision}`;
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]}>
+        <View style={[styles.container, { backgroundColor: colors.bg, paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 16) }]}>
         {/* Full-Screen Top Navigation Header */}
         <View style={[styles.header, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
           <View style={styles.headerTitleRow}>
@@ -425,7 +426,7 @@ ${result.quickRevision}`;
             )}
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </View>
       </KeyboardAvoidingView>
     </Modal>
   );

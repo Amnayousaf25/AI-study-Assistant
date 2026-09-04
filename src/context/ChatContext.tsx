@@ -11,9 +11,13 @@ import {
   saveAllFavorites,
   loadSavedTheme,
   saveThemePreference,
+  loadSavedApiKey,
+  saveApiKeyPreference,
   generateConversationTitle,
   clearAllLocalData,
 } from '../services/storage';
+
+import { getSavedSession } from '../services/authService';
 
 type GeminiPart =
   | { text: string }
@@ -24,24 +28,77 @@ type GeminiContent = {
   parts: GeminiPart[];
 };
 
-type GeminiErrorKind = 'configuration' | 'empty-response' | 'http' | 'network' | 'response' | 'timeout';
+type GeminiErrorKind =
+  | 'configuration'
+  | 'empty-response'
+  | 'http'
+  | 'network'
+  | 'response'
+  | 'timeout'
+  | 'rate-limit'
+  | 'unauthorized';
 
 export class GeminiRequestError extends Error {
+  readonly kind: GeminiErrorKind;
+  readonly status?: number;
+  readonly statusText?: string;
+  readonly apiMessage?: string;
+
   constructor(
-    readonly kind: GeminiErrorKind,
-    readonly status?: number,
+    kind: GeminiErrorKind,
+    status?: number,
+    statusText?: string,
+    apiMessage?: string
   ) {
-    super(kind);
+    let msg = `Gemini Request Failed (${kind})`;
+    if (status) msg += ` [HTTP ${status}]`;
+    if (statusText) msg += ` ${statusText}`;
+    if (apiMessage) msg += `: ${apiMessage}`;
+    super(msg);
+
+    this.kind = kind;
+    this.status = status;
+    this.statusText = statusText;
+    this.apiMessage = apiMessage;
   }
 }
 
+let runtimeCustomApiKey: string | null = null;
+
+export function setRuntimeApiKey(key: string | null): void {
+  runtimeCustomApiKey = key && key.trim() ? key.trim() : null;
+}
+
+export function getEffectiveApiKey(): string {
+  if (runtimeCustomApiKey) return runtimeCustomApiKey;
+  const envKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  return envKey ? envKey.trim() : '';
+}
+
 export const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-export const GEMINI_MODEL = 'gemini-3.6-flash';
-export const GEMINI_MODEL_FALLBACKS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+export const GEMINI_MODEL = 'gemini-2.0-flash';
+export const GEMINI_MODEL_FALLBACKS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 export const API_KEY_PLACEHOLDER = 'YOUR_GEMINI_API_KEY';
 const MAX_CONVERSATION_MESSAGES = 12;
 const GEMINI_CONFIGURATION_MESSAGE =
-  'Gemini API key is not configured. Add EXPO_PUBLIC_GEMINI_API_KEY to .env.local and restart Expo.';
+  'Gemini API key is not configured. Enter a valid API key in Settings or add EXPO_PUBLIC_GEMINI_API_KEY to your environment.';
+
+export const STUDY_ASSISTANT_SYSTEM_PROMPT = `You are an expert AI Study Assistant designed to help students, learners, researchers, and professionals with ANY educational, academic, study, exam, or research topic across ALL fields of study.
+
+### CORE OPERATING RULE: BROAD EDUCATIONAL & STUDY SCOPE
+1. INTENT EVALUATION:
+   Determine the user's intent. You MUST assist with ANY request that is genuinely related to learning, education, studying, academics, school/college/university courses, professional qualifications, exams, research papers, writing, problem-solving, coding, or skill development.
+
+2. SUPPORT ALL SUBJECTS & FIELDS (Do NOT restrict by subject list):
+   - You MUST help with ANY academic or educational subject, including Mathematics, Physics, Chemistry, Biology, Medicine, Engineering, Computer Science, Programming, AI/ML, Business, Economics, Accounting, Finance, Law, History, Geography, Psychology, Sociology, Literature, Languages, Arts, Architecture, Education, Research, Academic writing, and any other school, college, university, or professional subject.
+   - The restriction is strictly based on the INTENT of the user's question, NOT on a fixed subject list. Support new, unlisted, and custom subjects automatically.
+
+3. NON-EDUCATIONAL / UNRELATED REQUESTS:
+   If a user asks a question that is clearly UNRELATED to learning, education, studying, academics, exams, assignments, or research (for example: weather updates, celebrity gossip, casual funny stories, restaurant recommendations, movies/entertainment advice, etc.), you MUST respond naturally with:
+   "I'm your AI Study Assistant, so I can help with learning, education, exams, assignments, research, and study-related questions. Please ask me something you'd like to learn."
+
+4. EXCELLENCE & CLARITY:
+   For all study-related questions, provide thorough, accurate, step-by-step responses formatted with clear Markdown.`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -97,7 +154,7 @@ function toGeminiContents(conversation: Message[]): GeminiContent[] {
     if (message.text && message.text.trim()) {
       parts.push({ text: message.text });
     } else if (base64Data) {
-      parts.push({ text: 'Please analyze this image in detail and describe what you see.' });
+      parts.push({ text: `Please analyze this attached document "${message.fileName || 'file'}" in detail and provide a comprehensive explanation.` });
     } else {
       parts.push({ text: message.text || '' });
     }
@@ -118,48 +175,47 @@ function logGeminiTiming(
   startedAt: number,
   fetchStartedAt: number,
   responseReceivedAt: number,
-  parsedAt: number,
-  messageCount: number,
-): void {
+  completedAt: number,
+  modelName: string,
+) {
+  const ttfb = responseReceivedAt - fetchStartedAt;
+  const totalDuration = completedAt - startedAt;
   console.log(
-    `Gemini timing: prepare=${fetchStartedAt - startedAt}ms, request=${responseReceivedAt - fetchStartedAt}ms, parse=${parsedAt - responseReceivedAt}ms, total=${parsedAt - startedAt}ms, messages=${messageCount}`,
+    `[Gemini Timing] Model: ${modelName} | TTFB: ${ttfb}ms | Total: ${totalDuration}ms`,
   );
 }
 
 export function getUserErrorMessage(error: unknown): string {
-  if (!(error instanceof GeminiRequestError)) return 'Sorry, something went wrong. Please try again.';
-
-  if (error.kind === 'configuration') return GEMINI_CONFIGURATION_MESSAGE;
-  if (error.kind === 'timeout') return 'AI response timed out. Please try again.';
-  if (error.kind === 'empty-response') return 'The AI returned an empty response. Please try again.';
-  if (error.kind === 'network') return 'Network error. Check your connection and try again.';
-  if (error.kind === 'response') return 'Gemini returned an unexpected response. Please try again.';
-
-  switch (error.status) {
-    case 400:
-      return 'Gemini rejected this request (HTTP 400). Please try again.';
-    case 401:
-      return 'Gemini API key is invalid or unauthorized (HTTP 401).';
-    case 403:
-      return `Gemini rejected the API key (HTTP ${error.status}). Check your key and its permissions.`;
-    case 404:
-      return 'The configured Gemini model was not found (HTTP 404).';
-    case 429:
-      return 'Gemini rate limit reached (HTTP 429). Please try again shortly.';
-    case 500:
-      return 'Gemini had an internal error (HTTP 500). Please try again shortly.';
-    case 503:
-      return 'Gemini is temporarily unavailable (HTTP 503). Please try again shortly.';
-    default:
-      return `Gemini request failed (HTTP ${error.status ?? 'unknown'}). Please try again.`;
+  if (error instanceof GeminiRequestError) {
+    if (error.kind === 'configuration') return 'AI service configuration is unavailable. Please check your API configuration.';
+    if (error.kind === 'rate-limit' || error.status === 429) return 'AI is temporarily busy. Please try again in a moment.';
+    if (error.kind === 'unauthorized' || error.status === 401 || error.status === 403) {
+      return 'AI service authorization failed. Please check the API configuration.';
+    }
+    if (error.status === 400) return 'The AI request could not be processed. Please try again.';
+    if (error.kind === 'network') return 'Unable to connect to the AI service. Check your internet connection.';
+    if (error.status && error.status >= 500) return 'The AI service is temporarily unavailable. Please try again later.';
+    if (error.kind === 'timeout') return 'The AI request timed out. Please try again.';
+    if (error.kind === 'empty-response') return 'The AI returned an empty response. Please try again.';
   }
+
+  if (error instanceof Error) {
+    const msg = error.message || '';
+    if (msg.includes('429')) return 'AI is temporarily busy. Please try again in a moment.';
+    if (msg.includes('401') || msg.includes('403')) return 'AI service authorization failed. Please check the API configuration.';
+    if (msg.includes('400')) return 'The AI request could not be processed. Please try again.';
+    if (msg.includes('Network') || msg.includes('fetch')) return 'Unable to connect to the AI service. Check your internet connection.';
+  }
+
+  return 'Something went wrong while generating this content. Please try again.';
 }
 
 export async function sendMessageToGemini(
   conversation: Message[],
   outerSignal?: AbortSignal,
 ): Promise<string> {
-  if (!GEMINI_API_KEY?.trim() || GEMINI_API_KEY === API_KEY_PLACEHOLDER) {
+  const apiKey = getEffectiveApiKey();
+  if (!apiKey || apiKey === API_KEY_PLACEHOLDER) {
     throw new GeminiRequestError('configuration');
   }
 
@@ -171,13 +227,18 @@ export async function sendMessageToGemini(
   }
 
   const recentConversation = getRecentConversation(conversation);
-  const requestBody = JSON.stringify({ contents: toGeminiContents(recentConversation) });
+  const requestBody = JSON.stringify({
+    system_instruction: {
+      parts: [{ text: STUDY_ASSISTANT_SYSTEM_PROMPT }],
+    },
+    contents: toGeminiContents(recentConversation),
+  });
   let lastError: any = null;
 
   try {
     for (const modelName of GEMINI_MODEL_FALLBACKS) {
       try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -190,7 +251,10 @@ export async function sendMessageToGemini(
         }
 
         if (!response.ok) {
-          throw new GeminiRequestError('http', response.status);
+          let errKind: GeminiErrorKind = 'http';
+          if (response.status === 401 || response.status === 403) errKind = 'unauthorized';
+          else if (response.status === 429) errKind = 'rate-limit';
+          throw new GeminiRequestError(errKind, response.status);
         }
 
         const responseData = (await response.json()) as unknown;
@@ -223,8 +287,10 @@ interface ChatContextType {
   favorites: FavoriteItem[];
   isLoading: boolean;
   isDark: boolean;
+  userApiKey: string;
   totalMessagesCount: number;
   toggleTheme: () => void;
+  updateApiKey: (key: string) => Promise<void>;
   handleSend: (
     textToSend: string,
     targetConversationId?: string,
@@ -249,6 +315,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+  const [userApiKey, setUserApiKey] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const abortControllerRef = React.useRef<AbortController | null>(null);
@@ -256,15 +323,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize storage
   useEffect(() => {
     async function initApp() {
-      const [savedTheme, savedConversations, savedActiveId, savedFavorites] = await Promise.all([
+      const session = await getSavedSession();
+      const studentId = session?.studentId;
+
+      const [savedTheme, savedConversations, savedActiveId, savedFavorites, savedKey] = await Promise.all([
         loadSavedTheme(),
-        loadSavedConversations(),
-        loadActiveConversationId(),
-        loadSavedFavorites(),
+        loadSavedConversations(studentId),
+        loadActiveConversationId(studentId),
+        loadSavedFavorites(studentId),
+        loadSavedApiKey(studentId),
       ]);
 
       if (savedTheme !== null) {
         setIsDark(savedTheme);
+      }
+
+      if (savedKey) {
+        setUserApiKey(savedKey);
+        setRuntimeApiKey(savedKey);
       }
 
       // Filter out empty conversation clutter on load
@@ -294,9 +370,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [conversations]);
 
   const syncConversationMessages = useCallback(
-    (nextMessages: Message[], convId?: string) => {
+    async (nextMessages: Message[], convId?: string) => {
       setMessages(nextMessages);
       const targetId = convId || activeConversationId;
+      const session = await getSavedSession();
+      const studentId = session?.studentId;
 
       if (!targetId || !conversations.some((c) => c.id === targetId)) {
         const firstUserMsg = nextMessages.find((m) => m.sender === 'user');
@@ -315,8 +393,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updated = [newConv, ...conversations.filter((c) => c.id !== newId && c.messages.length > 0)];
         setConversations(updated);
         setActiveConversationId(newId);
-        saveAllConversations(updated);
-        saveActiveConversationId(newId);
+        await saveAllConversations(updated, studentId);
+        await saveActiveConversationId(newId, studentId);
       } else {
         const updated = conversations.map((c) => {
           if (c.id === targetId) {
@@ -336,7 +414,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         setConversations(updated);
-        saveAllConversations(updated);
+        await saveAllConversations(updated, studentId);
       }
     },
     [activeConversationId, conversations],
@@ -354,9 +432,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (
       textToSend: string,
       targetConversationId?: string,
-      imageAttachment?: { uri: string; base64: string; mimeType: string; width?: number; height?: number } | null
+      imageAttachment?: { uri: string; base64: string; mimeType: string; name?: string; width?: number; height?: number; extractedText?: string } | null
     ) => {
-      const text = textToSend.trim();
+      let text = textToSend.trim();
+      if (!text && imageAttachment?.extractedText) {
+        text = `Please review and analyze the attached document "${imageAttachment.name || 'document'}":\n\n"""\n${imageAttachment.extractedText.slice(0, 4000)}\n"""`;
+      } else if (!text && imageAttachment?.name) {
+        text = `Please review and analyze the attached document "${imageAttachment.name}".`;
+      }
+
       if ((!text && !imageAttachment) || isLoading) return;
 
       const userMessage: Message = {
@@ -366,6 +450,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         imageUri: imageAttachment?.uri,
         imageBase64: imageAttachment?.base64,
         mimeType: imageAttachment?.mimeType,
+        fileName: imageAttachment?.name,
         imageWidth: imageAttachment?.width,
         imageHeight: imageAttachment?.height,
         timestamp: Date.now(),
@@ -502,13 +587,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setConversations(cleanConversations);
     setActiveConversationId(newId);
     setMessages([]);
-    saveAllConversations(cleanConversations);
-    saveActiveConversationId(newId);
+    getSavedSession().then((session) => {
+      saveAllConversations(cleanConversations, session?.studentId);
+      saveActiveConversationId(newId, session?.studentId);
+    });
     return newId;
   }, [conversations]);
 
   const startNewChatWithPrompt = useCallback(
     async (prompt: string): Promise<string> => {
+      const session = await getSavedSession();
+      const studentId = session?.studentId;
       const newId = `${Date.now()}`;
       const userMessage: Message = {
         id: `${Date.now()}-user`,
@@ -530,8 +619,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setConversations(updated);
       setActiveConversationId(newId);
       setMessages(initialMessages);
-      saveAllConversations(updated);
-      saveActiveConversationId(newId);
+      await saveAllConversations(updated, studentId);
+      await saveActiveConversationId(newId, studentId);
 
       setIsLoading(true);
       try {
@@ -550,7 +639,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
         setConversations(updatedFinal);
         setMessages(finalMessages);
-        saveAllConversations(updatedFinal);
+        await saveAllConversations(updatedFinal, studentId);
       } catch (error: unknown) {
         console.error('Gemini request failed:', error);
         const finalMessages: Message[] = [
@@ -568,7 +657,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
         setConversations(updatedFinal);
         setMessages(finalMessages);
-        saveAllConversations(updatedFinal);
+        await saveAllConversations(updatedFinal, studentId);
       } finally {
         setIsLoading(false);
       }
@@ -579,32 +668,35 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const handleSelectConversation = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const conv = conversations.find((c) => c.id === id);
       if (conv) {
         setActiveConversationId(id);
         setMessages(conv.messages);
-        saveActiveConversationId(id);
+        const session = await getSavedSession();
+        await saveActiveConversationId(id, session?.studentId);
       }
     },
     [conversations],
   );
 
   const handleDeleteConversation = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const updated = conversations.filter((c) => c.id !== id);
       setConversations(updated);
-      saveAllConversations(updated);
+      const session = await getSavedSession();
+      const studentId = session?.studentId;
+      await saveAllConversations(updated, studentId);
 
       if (activeConversationId === id) {
         if (updated.length > 0) {
           setActiveConversationId(updated[0].id);
           setMessages(updated[0].messages);
-          saveActiveConversationId(updated[0].id);
+          await saveActiveConversationId(updated[0].id, studentId);
         } else {
           setActiveConversationId(null);
           setMessages([]);
-          saveActiveConversationId(null);
+          await saveActiveConversationId(null, studentId);
         }
       }
     },
@@ -639,7 +731,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           updated = [newItem, ...prev];
         }
-        saveAllFavorites(updated);
+        getSavedSession().then((session) => {
+          saveAllFavorites(updated, session?.studentId);
+        });
         return updated;
       });
     },
@@ -677,6 +771,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  const updateApiKey = useCallback(async (key: string) => {
+    const session = await getSavedSession();
+    const cleanKey = key ? key.trim() : '';
+    setUserApiKey(cleanKey);
+    setRuntimeApiKey(cleanKey);
+    await saveApiKeyPreference(cleanKey, session?.studentId);
+  }, []);
+
   return (
     <ChatContext.Provider
       value={{
@@ -687,8 +789,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         favorites,
         isLoading,
         isDark,
+        userApiKey,
         totalMessagesCount,
         toggleTheme,
+        updateApiKey,
         handleSend,
         handleStopGeneration,
         handleRegenerate,

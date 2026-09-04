@@ -123,18 +123,25 @@ export async function loginStudentAccount(
   }
 
   const map = await loadRegisteredAccountsMap();
-  const account = map[cleanId];
+  let account = map[cleanId];
 
   if (!account) {
-    return {
-      success: false,
-      error: `No account found for Student ID "${cleanId}". Please create an account first.`,
+    // Auto-provision account on new device if logging in with Student ID & password
+    account = {
+      id: `std_${Date.now()}_${cleanId}`,
+      studentId: cleanId,
+      name: `Student ${cleanId}`,
+      email: '',
+      passwordHash: hashPassword(cleanPassword),
+      createdAt: Date.now(),
     };
-  }
-
-  const inputHash = hashPassword(cleanPassword);
-  if (account.passwordHash !== inputHash) {
-    return { success: false, error: 'Invalid Student ID or password.' };
+    map[cleanId] = account;
+    await saveRegisteredAccountsMap(map);
+  } else {
+    const inputHash = hashPassword(cleanPassword);
+    if (account.passwordHash !== inputHash) {
+      return { success: false, error: 'Invalid Student ID or password.' };
+    }
   }
 
   const profile: StudentProfile = {

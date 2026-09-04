@@ -12,16 +12,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useResponsive } from '../src/hooks/useResponsive';
 import {
-  pickImageFromCamera,
-  pickImageFromGallery,
-  pickImageFromBrowser,
-  PickedImageResult,
-} from '../src/utils/imagePickerHelper';
+  pickAnyFile,
+  pickImageAsFile,
+  takePhotoAsFile,
+  PickedFileResult,
+} from '../src/utils/filePickerHelper';
+import { PickedImageResult } from '../src/utils/imagePickerHelper';
 
 interface ImageAttachmentModalProps {
   visible: boolean;
   onClose: () => void;
-  onImageSelected: (image: PickedImageResult) => void;
+  onImageSelected: (fileOrImage: PickedFileResult | PickedImageResult) => void;
   isDark?: boolean;
 }
 
@@ -33,32 +34,29 @@ export const ImageAttachmentModal: React.FC<ImageAttachmentModalProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const { isWideScreen } = useResponsive();
-  const isWeb = Platform.OS === 'web';
+
+  const handleDocumentPress = async () => {
+    onClose();
+    setTimeout(async () => {
+      const result = await pickAnyFile();
+      if (result) onImageSelected(result);
+    }, 150);
+  };
+
+  const handleGalleryPress = async () => {
+    onClose();
+    setTimeout(async () => {
+      const result = await pickImageAsFile();
+      if (result) onImageSelected(result);
+    }, 150);
+  };
 
   const handleCameraPress = async () => {
     onClose();
-    if (isWeb) {
-      const result = await pickImageFromBrowser('environment');
+    setTimeout(async () => {
+      const result = await takePhotoAsFile();
       if (result) onImageSelected(result);
-    } else {
-      setTimeout(async () => {
-        const result = await pickImageFromCamera();
-        if (result) onImageSelected(result);
-      }, 150);
-    }
-  };
-
-  const handleGalleryOrUploadPress = async () => {
-    onClose();
-    if (isWeb) {
-      const result = await pickImageFromBrowser();
-      if (result) onImageSelected(result);
-    } else {
-      setTimeout(async () => {
-        const result = await pickImageFromGallery();
-        if (result) onImageSelected(result);
-      }, 150);
-    }
+    }, 150);
   };
 
   const colors = {
@@ -66,6 +64,8 @@ export const ImageAttachmentModal: React.FC<ImageAttachmentModalProps> = ({
     border: isDark ? '#1e293b' : '#e2e8f0',
     titleText: isDark ? '#f8fafc' : '#0f172a',
     subText: isDark ? '#94a3b8' : '#64748b',
+    cardBgDoc: isDark ? '#022c22' : '#f0fdf4',
+    cardBorderDoc: isDark ? '#065f46' : '#bbf7d0',
     cardBg1: isDark ? '#1e1b4b' : '#eef2ff',
     cardBorder1: isDark ? '#312e81' : '#c7d2fe',
     cardBg2: isDark ? '#1e293b' : '#f8fafc',
@@ -103,10 +103,10 @@ export const ImageAttachmentModal: React.FC<ImageAttachmentModalProps> = ({
               <View style={[styles.headerRow, { borderBottomColor: colors.border }]}>
                 <View style={styles.headerTextCol}>
                   <Text style={[styles.title, { color: colors.titleText }]}>
-                    {isWeb ? 'Attach Image / Photo' : 'Attach Image for AI Analysis'}
+                    Attach File or Image
                   </Text>
                   <Text style={[styles.subtitle, { color: colors.subText }]}>
-                    Ask questions, solve problems, or inspect diagrams
+                    Upload documents, PDFs, notes, or photos for AI analysis
                   </Text>
                 </View>
 
@@ -121,9 +121,30 @@ export const ImageAttachmentModal: React.FC<ImageAttachmentModalProps> = ({
 
               {/* Action Options */}
               <View style={styles.optionsList}>
-                {/* Option 1: Gallery */}
+                {/* Option 1: Any Document (PDF, Word, TXT, etc.) */}
                 <Pressable
-                  onPress={handleGalleryOrUploadPress}
+                  onPress={handleDocumentPress}
+                  style={[
+                    styles.optionItem,
+                    { backgroundColor: colors.cardBgDoc, borderColor: colors.cardBorderDoc },
+                  ]}
+                >
+                  <View style={[styles.optionIconBadge, { backgroundColor: '#10b981' }]}>
+                    <Ionicons name="document-text" size={20} color="#ffffff" />
+                  </View>
+                  <View style={styles.optionTextCol}>
+                    <Text style={[styles.optionTitle, { color: colors.titleText }]}>
+                      Upload Document / File
+                    </Text>
+                    <Text style={[styles.optionDesc, { color: colors.subText }]}>
+                      Select PDF, Word (.docx), TXT, CSV, or study notes
+                    </Text>
+                  </View>
+                </Pressable>
+
+                {/* Option 2: Gallery / Photo File */}
+                <Pressable
+                  onPress={handleGalleryPress}
                   style={[
                     styles.optionItem,
                     { backgroundColor: colors.cardBg1, borderColor: colors.cardBorder1 },
@@ -134,17 +155,15 @@ export const ImageAttachmentModal: React.FC<ImageAttachmentModalProps> = ({
                   </View>
                   <View style={styles.optionTextCol}>
                     <Text style={[styles.optionTitle, { color: colors.titleText }]}>
-                      {isWeb ? 'Upload Image File' : 'Choose from Library'}
+                      Photo Library / Image
                     </Text>
                     <Text style={[styles.optionDesc, { color: colors.subText }]}>
-                      {isWeb
-                        ? 'Select PNG, JPG, or WEBP from your device'
-                        : 'Select an existing photo, chart, or screenshot'}
+                      Select PNG, JPG, or WEBP photo from your device
                     </Text>
                   </View>
                 </Pressable>
 
-                {/* Option 2: Camera */}
+                {/* Option 3: Camera */}
                 <Pressable
                   onPress={handleCameraPress}
                   style={[
@@ -160,9 +179,7 @@ export const ImageAttachmentModal: React.FC<ImageAttachmentModalProps> = ({
                       Take Photo
                     </Text>
                     <Text style={[styles.optionDesc, { color: colors.subText }]}>
-                      {isWeb
-                        ? 'Capture photo with device camera'
-                        : 'Capture a document, diagram, or textbook page'}
+                      Capture a document, diagram, or textbook page
                     </Text>
                   </View>
                 </Pressable>
@@ -237,7 +254,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   optionsList: {
-    gap: 12,
+    gap: 10,
     marginVertical: 8,
   },
   optionItem: {

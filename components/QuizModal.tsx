@@ -12,8 +12,10 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useResponsive } from '../src/hooks/useResponsive';
 import { useStudy } from '../src/context/StudyContext';
 import { useChat } from '../src/context/ChatContext';
+import { getFriendlyErrorMessage } from '../src/services/aiService';
 import { StudySubject, QuizDifficulty, QuizQuestion, QuizResult } from '../src/types/study';
 import {
   CloseIcon,
@@ -30,6 +32,9 @@ interface QuizModalProps {
   onClose: () => void;
   initialSubject?: string;
   initialTopic?: string;
+  documentText?: string;
+  documentBase64?: string;
+  documentMimeType?: string;
 }
 
 const DIFFICULTIES: QuizDifficulty[] = ['Easy', 'Medium', 'Hard'];
@@ -40,8 +45,12 @@ export const QuizModal: React.FC<QuizModalProps> = ({
   onClose,
   initialSubject = 'Physics',
   initialTopic = '',
+  documentText,
+  documentBase64,
+  documentMimeType,
 }) => {
   const insets = useSafeAreaInsets();
+  const { isWideScreen } = useResponsive();
   const { isDark } = useChat();
   const {
     subjects,
@@ -57,6 +66,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
   const [topic, setTopic] = useState<string>(initialTopic);
   const [difficulty, setDifficulty] = useState<QuizDifficulty>('Medium');
   const [questionCount, setQuestionCount] = useState<number>(5);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialSubject) setSubject(initialSubject);
@@ -68,15 +78,31 @@ export const QuizModal: React.FC<QuizModalProps> = ({
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
   const [completedResult, setCompletedResult] = useState<QuizResult | null>(null);
   const [isReviewing, setIsReviewing] = useState<boolean>(false);
+  const [isFinishing, setIsFinishing] = useState<boolean>(false);
 
   const handleStart = async () => {
-    if (!topic.trim() || isGeneratingQuiz) return;
+    if (isGeneratingQuiz) return;
+    const topicToUse = topic.trim() || initialTopic?.trim() || `${subject || 'General'} Practice Quiz`;
+    setErrorMsg(null);
     setCurrentStep(0);
     setSelectedOption(null);
     setShowExplanation(false);
     setCompletedResult(null);
     setIsReviewing(false);
-    await startQuiz(topic.trim(), difficulty, questionCount);
+    try {
+      await startQuiz(
+        topicToUse,
+        difficulty,
+        questionCount,
+        5,
+        documentText,
+        documentBase64,
+        documentMimeType
+      );
+    } catch (err: any) {
+      console.error('Quiz start error:', err);
+      setErrorMsg(getFriendlyErrorMessage(err));
+    }
   };
 
   const handleSelectOption = (idx: number) => {
@@ -86,15 +112,27 @@ export const QuizModal: React.FC<QuizModalProps> = ({
     setShowExplanation(true);
   };
 
+  const handleFinishQuizNow = async () => {
+    if (!activeQuiz || isFinishing) return;
+    setIsFinishing(true);
+    try {
+      const result = await finishActiveQuiz();
+      setCompletedResult(result);
+    } catch (err) {
+      console.error('Error finishing quiz:', err);
+    } finally {
+      setIsFinishing(false);
+    }
+  };
+
   const handleNextQuestion = async () => {
-    if (!activeQuiz) return;
+    if (!activeQuiz || isFinishing) return;
     if (currentStep < activeQuiz.questions.length - 1) {
       setCurrentStep((prev) => prev + 1);
       setSelectedOption(null);
       setShowExplanation(false);
     } else {
-      const result = await finishActiveQuiz();
-      setCompletedResult(result);
+      await handleFinishQuizNow();
     }
   };
 
@@ -117,66 +155,71 @@ export const QuizModal: React.FC<QuizModalProps> = ({
       transparent={true}
       onRequestClose={handleClose}
     >
-      {/* Dimmed Backdrop */}
-      <View className="flex-1 bg-black/60 justify-end sm:justify-center items-center">
-        <TouchableWithoutFeedback onPress={handleClose}>
-          <View className="absolute inset-0" />
-        </TouchableWithoutFeedback>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        {/* Dimmed Backdrop */}
+        <View className="flex-1 bg-black/60 justify-end sm:justify-center items-center">
+          <TouchableWithoutFeedback onPress={handleClose}>
+            <View className="absolute inset-0" />
+          </TouchableWithoutFeedback>
 
-        {/* Modal Container: Max 85vh height constraint */}
-        <View
-          style={{
-            maxHeight: '88%',
-            paddingBottom: Math.max(insets.bottom, 16),
-          }}
-          className="w-full sm:max-w-xl bg-white dark:bg-slate-900 rounded-t-[32px] sm:rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-2xl flex-col overflow-hidden z-10"
-        >
-          {/* Drag Handle & Fixed Header */}
-          <View className="px-5 pt-3 pb-3 border-b border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900">
-            {/* Centered Drag Handle Pill */}
-            <View className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-3" />
-
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center space-x-2.5 gap-2.5 flex-1 mr-2">
-                <View className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-100 dark:border-indigo-800/60 items-center justify-center">
-                  <QuizIcon size={18} color="#6366f1" />
-                </View>
-                <View className="flex-1">
-                  <Text numberOfLines={1} className="text-base font-bold text-slate-900 dark:text-slate-50">
-                    {completedResult
-                      ? 'Quiz Results'
-                      : activeQuiz
-                      ? `${activeQuiz.subject} Quiz`
-                      : 'AI Quiz Generator'}
-                  </Text>
-                  <Text numberOfLines={1} className="text-xs text-slate-400 font-medium">
-                    {completedResult
-                      ? completedResult.title
-                      : activeQuiz
-                      ? `Question ${currentStep + 1} of ${activeQuiz.questions.length} • ${activeQuiz.difficulty}`
-                      : 'Create interactive practice MCQs'}
-                  </Text>
-                </View>
-              </View>
-
-              <Pressable
-                onPress={handleClose}
-                className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 items-center justify-center active:bg-slate-200 min-h-[36px] min-w-[36px]"
-                accessibilityRole="button"
-                accessibilityLabel="Close modal"
-                hitSlop={8}
-              >
-                <CloseIcon size={16} color={isDark ? '#cbd5e1' : '#64748b'} />
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Independently Scrollable Body */}
-          <ScrollView
-            className="flex-1 px-5 py-4"
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+          {/* Modal Container: Guaranteed height on mobile */}
+          <View
+            style={{
+              height: isWideScreen ? undefined : '82%',
+              maxHeight: '90%',
+            }}
+            className="w-full sm:max-w-xl bg-white dark:bg-slate-900 rounded-t-[32px] sm:rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-2xl flex-col overflow-hidden z-10"
           >
+            {/* Drag Handle & Fixed Header */}
+            <View className="px-5 pt-3 pb-3 border-b border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900">
+              {/* Centered Drag Handle Pill */}
+              <View className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-3" />
+
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center space-x-2.5 gap-2.5 flex-1 mr-2">
+                  <View className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-100 dark:border-indigo-800/60 items-center justify-center">
+                    <QuizIcon size={18} color="#6366f1" />
+                  </View>
+                  <View className="flex-1">
+                    <Text numberOfLines={1} className="text-base font-bold text-slate-900 dark:text-slate-50">
+                      {completedResult
+                        ? 'Quiz Results'
+                        : activeQuiz
+                        ? `${activeQuiz.subject} Quiz`
+                        : 'AI Quiz Generator'}
+                    </Text>
+                    <Text numberOfLines={1} className="text-xs text-slate-400 font-medium">
+                      {completedResult
+                        ? completedResult.title
+                        : activeQuiz
+                        ? `Question ${currentStep + 1} of ${activeQuiz.questions.length} • ${activeQuiz.difficulty}`
+                        : 'Create interactive practice MCQs'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  onPress={handleClose}
+                  className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 items-center justify-center active:bg-slate-200 min-h-[36px] min-w-[36px]"
+                  accessibilityRole="button"
+                  accessibilityLabel="Close modal"
+                  hitSlop={8}
+                >
+                  <CloseIcon size={16} color={isDark ? '#cbd5e1' : '#64748b'} />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Independently Scrollable Body */}
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28, flexGrow: 1 }}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+            >
             {/* 1. QUIZ COMPLETED SCREEN */}
             {completedResult && !isReviewing ? (
               <View className="py-4 items-center">
@@ -246,7 +289,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
                     onPress={handleClose}
                     className="w-full bg-indigo-600 active:bg-indigo-700 py-3.5 rounded-2xl items-center shadow-sm shadow-indigo-500/25 min-h-[44px] justify-center"
                   >
-                    <Text className="text-xs font-bold text-white">Back to Dashboard</Text>
+                    <Text className="text-xs font-bold text-white">Finish Quiz & Save Result 🎉</Text>
                   </Pressable>
                 </View>
               </View>
@@ -353,10 +396,21 @@ export const QuizModal: React.FC<QuizModalProps> = ({
                   <Text className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
                     Question {currentStep + 1} of {activeQuiz.questions.length}
                   </Text>
-                  <View className="bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-full">
-                    <Text className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
-                      {activeQuiz.subject} • {activeQuiz.difficulty}
-                    </Text>
+                  <View className="flex-row items-center space-x-2 gap-2">
+                    <Pressable
+                      onPress={handleFinishQuizNow}
+                      disabled={isFinishing}
+                      className="bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2.5 py-0.5 rounded-full active:bg-amber-100"
+                    >
+                      <Text className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                        {isFinishing ? 'Finishing...' : 'Finish Early 🏁'}
+                      </Text>
+                    </Pressable>
+                    <View className="bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-full">
+                      <Text className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                        {activeQuiz.subject || activeQuiz.difficulty}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -456,6 +510,22 @@ export const QuizModal: React.FC<QuizModalProps> = ({
             ) : (
               /* 3. GENERATE QUIZ SETUP FORM */
               <View className="space-y-4 gap-4 py-1">
+                {Boolean(documentText || documentBase64) && (
+                  <View className="bg-amber-50 dark:bg-amber-950/60 p-3 rounded-2xl border border-amber-200 dark:border-amber-800 flex-row items-center space-x-2 gap-2">
+                    <SparklesIcon size={16} color="#d97706" />
+                    <Text className="text-xs font-bold text-amber-800 dark:text-amber-300 flex-1">
+                      Generating quiz directly from document "{topic}"
+                    </Text>
+                  </View>
+                )}
+
+                {errorMsg && (
+                  <View className="bg-rose-50 dark:bg-rose-950/60 p-3 rounded-2xl border border-rose-200 dark:border-rose-800">
+                    <Text className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                      ⚠️ {errorMsg}
+                    </Text>
+                  </View>
+                )}
 
                 {/* 2. Topic Input */}
                 <View>
@@ -533,26 +603,37 @@ export const QuizModal: React.FC<QuizModalProps> = ({
           </ScrollView>
 
           {/* Fixed Footer CTA */}
-          <View className="px-5 pt-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
-            {activeQuiz && showExplanation ? (
+          <View
+            style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+            className="px-5 pt-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900"
+          >
+            {activeQuiz && (showExplanation || currentStep === activeQuiz.questions.length - 1) ? (
               <Pressable
                 onPress={handleNextQuestion}
-                className="w-full bg-indigo-600 active:bg-indigo-700 py-3.5 rounded-2xl items-center shadow-sm shadow-indigo-500/25 min-h-[44px] justify-center active:scale-[0.99]"
+                disabled={isFinishing}
+                className="w-full bg-indigo-600 active:bg-indigo-700 py-3.5 rounded-2xl items-center shadow-sm shadow-indigo-500/25 min-h-[46px] justify-center active:scale-[0.99]"
               >
-                <Text className="text-xs font-bold text-white">
-                  {currentStep < activeQuiz.questions.length - 1
-                    ? 'Next Question →'
-                    : 'Finish Quiz 🎉'}
-                </Text>
+                {isFinishing ? (
+                  <View className="flex-row items-center space-x-2 gap-2">
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text className="text-xs font-bold text-white">Saving & Finishing Quiz...</Text>
+                  </View>
+                ) : (
+                  <Text className="text-xs font-bold text-white">
+                    {currentStep < activeQuiz.questions.length - 1
+                      ? 'Next Question →'
+                      : 'Finish Quiz 🎉'}
+                  </Text>
+                )}
               </Pressable>
             ) : !activeQuiz && !completedResult ? (
               <Pressable
                 onPress={handleStart}
-                disabled={!topic.trim() || isGeneratingQuiz}
-                className={`w-full py-3.5 rounded-2xl items-center shadow-sm min-h-[44px] justify-center active:scale-[0.99] ${
-                  topic.trim() && !isGeneratingQuiz
+                disabled={isGeneratingQuiz}
+                className={`w-full py-3.5 rounded-2xl items-center shadow-sm min-h-[46px] justify-center active:scale-[0.99] ${
+                  !isGeneratingQuiz
                     ? 'bg-indigo-600 active:bg-indigo-700 shadow-indigo-500/25'
-                    : 'bg-slate-200 dark:bg-slate-800 opacity-60'
+                    : 'bg-indigo-400 opacity-60'
                 }`}
               >
                 {isGeneratingQuiz ? (
@@ -570,6 +651,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
           </View>
         </View>
       </View>
-    </Modal>
-  );
+    </KeyboardAvoidingView>
+  </Modal>
+);
 };

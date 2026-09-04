@@ -192,7 +192,7 @@ export default function HomeScreen() {
             <View style={styles.gridRow}>
               {/* Quiz */}
               <Pressable
-                onPress={() => router.push('/quiz/config')}
+                onPress={() => router.push('/(tabs)/study')}
                 style={[styles.toolCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
                 <View style={[styles.toolIconBadge, { backgroundColor: '#fef3c7' }]}>
@@ -221,35 +221,6 @@ export default function HomeScreen() {
                   Revision cards
                 </Text>
               </Pressable>
-            </View>
-          </View>
-
-          {/* Real Learning Progress Section */}
-          <View style={[styles.progressSectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.cardTitle, { color: colors.textPrimary, marginBottom: 12 }]}>
-              Your Progress
-            </Text>
-
-            <View style={styles.progressGrid}>
-              <View style={styles.progressStatBox}>
-                <Text style={[styles.statValue, { color: colors.primary }]}>{realQuestionsSolved}</Text>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Questions Solved</Text>
-              </View>
-
-              <View style={styles.progressStatBox}>
-                <Text style={[styles.statValue, { color: colors.primary }]}>{realQuizzesCount}</Text>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Quizzes Completed</Text>
-              </View>
-
-              <View style={styles.progressStatBox}>
-                <Text style={[styles.statValue, { color: '#10b981' }]}>{realAccuracy}%</Text>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Accuracy</Text>
-              </View>
-
-              <View style={styles.progressStatBox}>
-                <Text style={[styles.statValue, { color: '#f59e0b' }]}>🔥 {realStreak}</Text>
-                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Study Streak</Text>
-              </View>
             </View>
           </View>
 
@@ -330,7 +301,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerRow: {
-    maxWidth: 480,
+    maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
     flexDirection: 'row',
@@ -401,7 +372,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   innerWrapper: {
-    maxWidth: 480,
+    maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
     gap: 16,

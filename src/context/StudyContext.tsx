@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo, useRef } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import {
@@ -85,7 +85,15 @@ interface StudyContextType {
     userAnswers: number[];
   } | null;
   isGeneratingQuiz: boolean;
-  startQuiz: (topicOrSubject: string, difficultyOrTopic?: any, countOrDifficulty?: any, optionalCount?: number) => Promise<QuizQuestion[]>;
+  startQuiz: (
+    topicOrSubject: string,
+    difficultyOrTopic?: any,
+    countOrDifficulty?: any,
+    optionalCount?: number,
+    docContent?: string,
+    base64Data?: string,
+    mimeType?: string
+  ) => Promise<QuizQuestion[]>;
   selectQuizAnswer: (questionIndex: number, optionIndex: number) => void;
   finishActiveQuiz: () => Promise<QuizResult | null>;
   cancelActiveQuiz: () => void;
@@ -107,6 +115,7 @@ interface StudyContextType {
   pickAndUploadDocument: () => Promise<StudyDocument | null>;
   createNoteDocument: (title: string, content: string, subject?: string) => Promise<StudyDocument>;
   saveSummaryAsDocument: (summary: SummaryResult) => Promise<StudyDocument>;
+  saveFlashcardsAsDocument: (topic: string, cards: { front: string; back: string }[]) => Promise<StudyDocument>;
   deleteDocument: (id: string) => Promise<void>;
   isSummarizing: boolean;
   createSummary: (
@@ -137,6 +146,7 @@ export const StudyProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [quizHistory, setQuizHistory] = useState<QuizResult[]>([]);
   const [activeQuiz, setActiveQuiz] = useState<StudyContextType['activeQuiz']>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const isSavingQuizRef = useRef(false);
 
   const [assignments, setAssignments] = useState<AssignmentSolution[]>([]);
   const [isSolvingAssignment, setIsSolvingAssignment] = useState(false);
@@ -256,7 +266,10 @@ export const StudyProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       topicOrSubject: string,
       difficultyOrTopic: any = 'Medium',
       countOrDifficulty: any = 5,
-      optionalCount: number = 5
+      optionalCount: number = 5,
+      docContent?: string,
+      base64Data?: string,
+      mimeType?: string
     ): Promise<QuizQuestion[]> => {
       setIsGeneratingQuiz(true);
       let realTopic = topicOrSubject;
@@ -274,7 +287,7 @@ export const StudyProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
 
       try {
-        const questions = await generateQuiz(realTopic, realDifficulty, realCount);
+        const questions = await generateQuiz(realTopic, realDifficulty, realCount, docContent, base64Data, mimeType);
         setActiveQuiz({
           subject: '',
           topic: realTopic,
@@ -304,69 +317,75 @@ export const StudyProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, []);
 
   const finishActiveQuiz = useCallback(async (): Promise<QuizResult | null> => {
-    if (!activeQuiz) return null;
+    if (!activeQuiz || isSavingQuizRef.current) return null;
+    isSavingQuizRef.current = true;
 
-    let correctCount = 0;
-    activeQuiz.questions.forEach((q, idx) => {
-      const userAns = activeQuiz.userAnswers[idx];
-      if (userAns === q.correctAnswerIndex) {
-        correctCount += 1;
-      }
-    });
-
-    const total = activeQuiz.questions.length;
-    const scorePercentage = Math.round((correctCount / (total || 1)) * 100);
-
-    const result: QuizResult = {
-      id: `quiz_${Date.now()}`,
-      title: activeQuiz.topic,
-      subject: '',
-      topic: activeQuiz.topic,
-      difficulty: activeQuiz.difficulty,
-      totalQuestions: total,
-      correctAnswers: correctCount,
-      scorePercentage,
-      timestamp: Date.now(),
-      questions: activeQuiz.questions,
-      userAnswers: activeQuiz.userAnswers,
-    };
-
-    const updatedQuizzes = await saveQuizResult(result, profile.studentId);
-    setQuizHistory(updatedQuizzes);
-
-    // Recalculate subject mastery & stats
-    setSubjects((prev) => {
-      const nextSubjects = prev.map((s) => {
-        if (s.name.toLowerCase() === activeQuiz.subject.toLowerCase()) {
-          const newQuizzesCount = s.quizzesCount + 1;
-          const newAvg = Math.round((s.averageScore * s.quizzesCount + scorePercentage) / newQuizzesCount);
-          return {
-            ...s,
-            quizzesCount: newQuizzesCount,
-            averageScore: newAvg,
-            completedTopicsCount: Math.min(s.completedTopicsCount + 1, s.topicsCount),
-          };
+    try {
+      let correctCount = 0;
+      activeQuiz.questions.forEach((q, idx) => {
+        const userAns = activeQuiz.userAnswers[idx];
+        if (userAns === q.correctAnswerIndex) {
+          correctCount += 1;
         }
-        return s;
       });
-      saveAllSubjects(nextSubjects, profile.studentId);
-      return nextSubjects;
-    });
 
-    // Update student profile stats
-    setProfile((prev) => {
-      const newQuizzes = prev.quizzesTaken + 1;
-      const newAvg = Math.round((prev.averageScore * prev.quizzesTaken + scorePercentage) / newQuizzes);
-      const updatedProf: StudentProfile = {
-        ...prev,
-        quizzesTaken: newQuizzes,
-        averageScore: newAvg,
+      const total = activeQuiz.questions.length;
+      const scorePercentage = Math.round((correctCount / (total || 1)) * 100);
+
+      const result: QuizResult = {
+        id: `quiz_${Date.now()}`,
+        title: activeQuiz.topic,
+        subject: '',
+        topic: activeQuiz.topic,
+        difficulty: activeQuiz.difficulty,
+        totalQuestions: total,
+        correctAnswers: correctCount,
+        scorePercentage,
+        timestamp: Date.now(),
+        questions: activeQuiz.questions,
+        userAnswers: activeQuiz.userAnswers,
       };
-      saveStudentSession(updatedProf);
-      return updatedProf;
-    });
 
-    return result;
+      const updatedQuizzes = await saveQuizResult(result, profile.studentId);
+      setQuizHistory(updatedQuizzes);
+
+      // Recalculate subject mastery & stats
+      setSubjects((prev) => {
+        const nextSubjects = prev.map((s) => {
+          if (s.name.toLowerCase() === activeQuiz.subject.toLowerCase()) {
+            const newQuizzesCount = s.quizzesCount + 1;
+            const newAvg = Math.round((s.averageScore * s.quizzesCount + scorePercentage) / newQuizzesCount);
+            return {
+              ...s,
+              quizzesCount: newQuizzesCount,
+              averageScore: newAvg,
+              completedTopicsCount: Math.min(s.completedTopicsCount + 1, s.topicsCount),
+            };
+          }
+          return s;
+        });
+        saveAllSubjects(nextSubjects, profile.studentId);
+        return nextSubjects;
+      });
+
+      // Update student profile stats
+      setProfile((prev) => {
+        const newQuizzes = prev.quizzesTaken + 1;
+        const newAvg = Math.round((prev.averageScore * prev.quizzesTaken + scorePercentage) / newQuizzes);
+        const updatedProf: StudentProfile = {
+          ...prev,
+          quizzesTaken: newQuizzes,
+          averageScore: newAvg,
+        };
+        saveStudentSession(updatedProf);
+        return updatedProf;
+      });
+
+      setActiveQuiz(null);
+      return result;
+    } finally {
+      isSavingQuizRef.current = false;
+    }
   }, [activeQuiz, profile.studentId]);
 
   const cancelActiveQuiz = useCallback(() => {
@@ -523,6 +542,38 @@ ${summary.quickRevision}`;
     [profile.studentId]
   );
 
+  const saveFlashcardsAsDocument = useCallback(
+    async (topic: string, cards: { front: string; back: string }[]): Promise<StudyDocument> => {
+      const formattedContent = `# 🎴 Flashcard Deck: ${topic}
+Total Cards: ${cards.length}
+
+${cards
+  .map(
+    (c, idx) => `### Card ${idx + 1}: ${c.front}
+**Answer / Explanation**:
+${c.back}
+---`
+  )
+  .join('\n\n')}`;
+
+      const newDoc: StudyDocument = {
+        id: `flashcard_doc_${Date.now()}`,
+        name: `🎴 Flashcards - ${topic}.txt`,
+        uri: `text://${Date.now()}`,
+        mimeType: 'text/plain',
+        sizeBytes: formattedContent.length,
+        extractedText: formattedContent,
+        summary: `Interactive study deck with ${cards.length} flashcards on ${topic}.`,
+        createdAt: Date.now(),
+      };
+
+      const updated = await saveStudyDocument(newDoc, profile.studentId);
+      setDocuments(updated);
+      return newDoc;
+    },
+    [profile.studentId]
+  );
+
   const deleteDocument = useCallback(async (id: string) => {
     const updated = await deleteStudyDocument(id, profile.studentId);
     setDocuments(updated);
@@ -667,6 +718,7 @@ ${summary.quickRevision}`;
         pickAndUploadDocument,
         createNoteDocument,
         saveSummaryAsDocument,
+        saveFlashcardsAsDocument,
         deleteDocument,
         isSummarizing,
         createSummary,

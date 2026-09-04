@@ -139,7 +139,6 @@ export default function TabQuizScreen() {
                   color: colors.textPrimary,
                 },
               ]}
-              autoFocus
             />
           </View>
 
@@ -217,27 +216,38 @@ export default function TabQuizScreen() {
               <Text style={styles.errorText}>{errorMsg}</Text>
             </View>
           ) : null}
-
-          {/* Submit Button */}
-          <Pressable
-            onPress={handleGenerate}
-            disabled={isGenerating}
-            style={[
-              styles.submitBtn,
-              { backgroundColor: colors.primary, opacity: isGenerating ? 0.7 : 1 },
-            ]}
-          >
-            {isGenerating ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={16} color="#ffffff" />
-                <Text style={styles.submitBtnText}>Generate Quiz</Text>
-              </>
-            )}
-          </Pressable>
         </View>
       </ScrollView>
+
+      {/* Pinned Bottom Submit CTA */}
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            backgroundColor: colors.card,
+            borderTopColor: colors.border,
+            paddingBottom: Math.max(insets.bottom, 12) + 12,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={handleGenerate}
+          disabled={isGenerating}
+          style={[
+            styles.submitBtn,
+            { backgroundColor: colors.primary, opacity: isGenerating ? 0.7 : 1 },
+          ]}
+        >
+          {isGenerating ? (
+            <ActivityIndicator color="#ffffff" size="small" />
+          ) : (
+            <>
+              <Ionicons name="sparkles" size={16} color="#ffffff" />
+              <Text style={styles.submitBtnText}>Generate Quiz</Text>
+            </>
+          )}
+        </Pressable>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -252,7 +262,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerRow: {
-    maxWidth: 480,
+    maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
     flexDirection: 'row',
@@ -285,7 +295,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   innerWrapper: {
-    maxWidth: 480,
+    maxWidth: 720,
     width: '100%',
     alignSelf: 'center',
     gap: 20,
@@ -347,6 +357,11 @@ const styles = StyleSheet.create({
     color: '#e11d48',
     textAlign: 'center',
   },
+  bottomBar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
   submitBtn: {
     paddingVertical: 14,
     borderRadius: 16,
@@ -354,7 +369,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 10,
   },
   submitBtnText: {
     fontSize: 14,

@@ -71,15 +71,6 @@ export default function ProgressScreen() {
 
           <View style={styles.headerRight}>
             <Pressable
-              onPress={() => router.push('/quiz/config')}
-              style={[styles.quizBtn, { backgroundColor: colors.primary }]}
-              accessibilityLabel="Generate Quiz"
-            >
-              <Ionicons name="add" size={14} color="#ffffff" />
-              <Text style={styles.quizBtnText}>Generate Quiz</Text>
-            </Pressable>
-
-            <Pressable
               onPress={toggleTheme}
               style={[styles.themeBtn, { backgroundColor: colors.btnBg }]}
               accessibilityLabel="Toggle Theme"
@@ -129,6 +120,41 @@ export default function ProgressScreen() {
             </View>
           </View>
 
+          {/* VISUAL PERFORMANCE BREAKDOWN CARD */}
+          <View style={[styles.analyticsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.analyticsHeader}>
+              <View style={styles.analyticsTitleRow}>
+                <Ionicons name="sparkles" size={16} color={colors.primary} />
+                <Text style={[styles.analyticsTitle, { color: colors.textPrimary }]}>
+                  Performance Analytics
+                </Text>
+              </View>
+              <View style={[styles.masteryBadge, { backgroundColor: realAccuracy >= 80 ? '#ecfdf5' : realAccuracy >= 50 ? '#fffbeb' : '#fef2f2' }]}>
+                <Text style={[styles.masteryText, { color: realAccuracy >= 80 ? '#059669' : realAccuracy >= 50 ? '#d97706' : '#dc2626' }]}>
+                  {realQuizzesCount === 0 ? 'No Data Yet' : realAccuracy >= 80 ? 'Mastered 🌟' : realAccuracy >= 50 ? 'On Track 👍' : 'Needs Practice 🎯'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.progressContainer}>
+              <View style={styles.progressLabelRow}>
+                <Text style={[styles.progressLabel, { color: colors.textMuted }]}>Overall Accuracy Level</Text>
+                <Text style={[styles.progressPercent, { color: colors.primary }]}>{realAccuracy}%</Text>
+              </View>
+              <View style={[styles.progressBarTrack, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    {
+                      width: `${Math.min(realAccuracy, 100)}%`,
+                      backgroundColor: realAccuracy >= 80 ? '#10b981' : realAccuracy >= 50 ? '#6366f1' : '#f59e0b',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+
           {/* RECENT QUIZ RESULTS */}
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
@@ -152,7 +178,7 @@ export default function ProgressScreen() {
                   Complete your first AI quiz to see your progress here.
                 </Text>
                 <Pressable
-                  onPress={() => router.push('/quiz/config')}
+                  onPress={() => router.push('/(tabs)/study')}
                   style={[styles.emptyCtaBtn, { backgroundColor: colors.primary }]}
                 >
                   <Text style={styles.emptyCtaText}>Generate Quiz</Text>
@@ -377,5 +403,59 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#059669',
+  },
+  analyticsCard: {
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 12,
+  },
+  analyticsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  analyticsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  analyticsTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  masteryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  masteryText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  progressContainer: {
+    gap: 6,
+  },
+  progressLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  progressPercent: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  progressBarTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
   },
 });

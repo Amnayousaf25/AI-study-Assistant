@@ -4,6 +4,7 @@ import {
   Text,
   Pressable,
   FlatList,
+  SectionList,
   TextInput,
   Modal,
   Platform,
@@ -59,10 +60,43 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) return conversations;
-    const q = searchQuery.toLowerCase();
-    return conversations.filter((c) => c.title.toLowerCase().includes(q));
+  const groupedSections = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+
+    // Search matching titles OR message content
+    const filtered = conversations.filter((c) => {
+      if (!q) return true;
+      const titleMatch = c.title.toLowerCase().includes(q);
+      const contentMatch = c.messages.some((m) => m.text && m.text.toLowerCase().includes(q));
+      return titleMatch || contentMatch;
+    });
+
+    const sorted = [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
+
+    const today: Conversation[] = [];
+    const yesterday: Conversation[] = [];
+    const older: Conversation[] = [];
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+
+    for (const conv of sorted) {
+      if (conv.updatedAt >= startOfToday) {
+        today.push(conv);
+      } else if (conv.updatedAt >= startOfYesterday) {
+        yesterday.push(conv);
+      } else {
+        older.push(conv);
+      }
+    }
+
+    const sections = [];
+    if (today.length > 0) sections.push({ title: 'Today', data: today });
+    if (yesterday.length > 0) sections.push({ title: 'Yesterday', data: yesterday });
+    if (older.length > 0) sections.push({ title: 'Older', data: older });
+
+    return sections;
   }, [conversations, searchQuery]);
 
   const confirmDelete = (id: string, title: string) => {
@@ -104,11 +138,11 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       transparent={true}
       onRequestClose={onClose}
     >
-      <View className="flex-1 bg-black/50 flex-row">
+      <View className="flex-1 bg-black/60 flex-row">
         {/* Main Drawer Panel */}
         <View
           style={{
@@ -154,14 +188,14 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
           </View>
 
           {/* Search Bar */}
-          {conversations.length > 3 && (
+          {conversations.length > 0 && (
             <View className="px-3 pb-2">
               <View className="flex-row items-center bg-slate-100 dark:bg-slate-800/90 rounded-xl px-3 py-1.5 border border-slate-200/80 dark:border-slate-700/60">
                 <SearchIcon size={14} color={isDark ? '#64748b' : '#94a3b8'} />
                 <TextInput
                   value={searchQuery}
                   onChangeText={setSearchQuery}
-                  placeholder="Search conversations..."
+                  placeholder="Search titles or messages..."
                   placeholderTextColor={isDark ? '#64748b' : '#94a3b8'}
                   className="flex-1 ml-2 text-xs text-slate-900 dark:text-slate-100 p-0"
                 />
@@ -169,11 +203,18 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             </View>
           )}
 
-          {/* Conversation List */}
-          <FlatList
-            data={filteredConversations}
+          {/* Conversation List Grouped by Date */}
+          <SectionList
+            sections={groupedSections}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 6, flexGrow: 1 }}
+            renderSectionHeader={({ section: { title } }) => (
+              <View className="pt-3 pb-1 px-1">
+                <Text className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                  {title}
+                </Text>
+              </View>
+            )}
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center p-6">
                 <Text className="text-2xl mb-2">💬</Text>

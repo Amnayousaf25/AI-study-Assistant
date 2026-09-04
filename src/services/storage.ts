@@ -40,6 +40,7 @@ const PROFILE_KEY = '@study_student_profile_v2';
 const SUBJECTS_KEY = '@study_subjects_v2';
 const ASSIGNMENTS_KEY = '@study_assignments_v2';
 const PRESENTATIONS_KEY = '@study_presentations_v2';
+const API_KEY_STORAGE_KEY = '@study_user_api_key_v2';
 
 export const DEFAULT_UNIVERSITY_SUBJECTS: SubjectItem[] = [];
 
@@ -146,7 +147,24 @@ export async function loadQuizHistory(studentId?: string): Promise<QuizResult[]>
     const raw = await AsyncStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+
+    const uniqueList: QuizResult[] = [];
+    for (const item of parsed) {
+      if (!item || !item.topic) continue;
+      const isDup = uniqueList.some(
+        (u) =>
+          u.id === item.id ||
+          (u.topic === item.topic &&
+            u.scorePercentage === item.scorePercentage &&
+            u.totalQuestions === item.totalQuestions &&
+            Math.abs(u.timestamp - item.timestamp) < 20000)
+      );
+      if (!isDup) {
+        uniqueList.push(item);
+      }
+    }
+    return uniqueList;
   } catch (error) {
     console.error('Error loading quiz history:', error);
     return [];
@@ -157,6 +175,20 @@ export async function saveQuizResult(result: QuizResult, studentId?: string): Pr
   try {
     const key = getScopedKey(QUIZ_HISTORY_KEY, studentId);
     const existing = await loadQuizHistory(studentId);
+
+    const isDuplicate = existing.some(
+      (item) =>
+        item.id === result.id ||
+        (item.topic === result.topic &&
+          item.scorePercentage === result.scorePercentage &&
+          item.totalQuestions === result.totalQuestions &&
+          Math.abs(item.timestamp - result.timestamp) < 20000)
+    );
+
+    if (isDuplicate) {
+      return existing;
+    }
+
     const updated = [result, ...existing];
     await AsyncStorage.setItem(key, JSON.stringify(updated));
     return updated;
@@ -278,6 +310,39 @@ export async function saveThemePreference(isDark: boolean): Promise<void> {
     await AsyncStorage.setItem(THEME_KEY, isDark ? 'dark' : 'light');
   } catch (error) {
     console.error('Error saving theme preference:', error);
+  }
+}
+
+export async function loadSavedApiKey(studentId?: string): Promise<string | null> {
+  try {
+    const key = getScopedKey(API_KEY_STORAGE_KEY, studentId);
+    const value = await AsyncStorage.getItem(key);
+    return value && value.trim() ? value.trim() : null;
+  } catch (error) {
+    console.error('Error loading API key:', error);
+    return null;
+  }
+}
+
+export async function saveApiKeyPreference(apiKey: string, studentId?: string): Promise<void> {
+  try {
+    const key = getScopedKey(API_KEY_STORAGE_KEY, studentId);
+    if (apiKey && apiKey.trim()) {
+      await AsyncStorage.setItem(key, apiKey.trim());
+    } else {
+      await AsyncStorage.removeItem(key);
+    }
+  } catch (error) {
+    console.error('Error saving API key preference:', error);
+  }
+}
+
+export async function clearSavedApiKey(studentId?: string): Promise<void> {
+  try {
+    const key = getScopedKey(API_KEY_STORAGE_KEY, studentId);
+    await AsyncStorage.removeItem(key);
+  } catch (error) {
+    console.error('Error clearing API key:', error);
   }
 }
 

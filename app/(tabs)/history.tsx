@@ -4,6 +4,7 @@ import {
   Text,
   Pressable,
   FlatList,
+  SectionList,
   TextInput,
   Platform,
   Alert,
@@ -12,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useChat } from '../../src/context/ChatContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
+import { Conversation } from '../../src/services/storage';
 import {
   PlusIcon,
   SearchIcon,
@@ -50,10 +52,43 @@ export default function HistoryTab() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) return conversations;
-    const q = searchQuery.toLowerCase();
-    return conversations.filter((c) => c.title.toLowerCase().includes(q));
+  const groupedSections = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+
+    // Filter matching titles OR message content
+    const filtered = conversations.filter((c) => {
+      if (!q) return true;
+      const titleMatch = c.title.toLowerCase().includes(q);
+      const contentMatch = c.messages.some((m) => m.text && m.text.toLowerCase().includes(q));
+      return titleMatch || contentMatch;
+    });
+
+    const sorted = [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
+
+    const today: Conversation[] = [];
+    const yesterday: Conversation[] = [];
+    const older: Conversation[] = [];
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+
+    for (const conv of sorted) {
+      if (conv.updatedAt >= startOfToday) {
+        today.push(conv);
+      } else if (conv.updatedAt >= startOfYesterday) {
+        yesterday.push(conv);
+      } else {
+        older.push(conv);
+      }
+    }
+
+    const sections = [];
+    if (today.length > 0) sections.push({ title: 'Today', data: today });
+    if (yesterday.length > 0) sections.push({ title: 'Yesterday', data: yesterday });
+    if (older.length > 0) sections.push({ title: 'Older', data: older });
+
+    return sections;
   }, [conversations, searchQuery]);
 
   const confirmDelete = useCallback(
@@ -184,14 +219,21 @@ export default function HistoryTab() {
 
       {/* History List Centered Column */}
       <View className="flex-1 w-full max-w-4xl mx-auto self-center">
-        <FlatList
-          data={filteredConversations}
+        <SectionList
+          sections={groupedSections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{
             padding: isWideScreen ? 24 : 16,
             flexGrow: 1,
           }}
           showsVerticalScrollIndicator={false}
+          renderSectionHeader={({ section: { title } }) => (
+            <View className="pt-4 pb-1.5 px-1">
+              <Text className="text-xs font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                {title}
+              </Text>
+            </View>
+          )}
           ListEmptyComponent={
             <View className="flex-1 items-center justify-center p-8">
               <View className="w-16 h-16 rounded-3xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 items-center justify-center mb-4">

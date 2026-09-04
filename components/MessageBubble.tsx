@@ -13,6 +13,7 @@ export interface Message {
   imageUri?: string;
   imageBase64?: string;
   mimeType?: string;
+  fileName?: string;
   imageWidth?: number;
   imageHeight?: number;
   isError?: boolean;
@@ -165,18 +166,38 @@ const MessageBubbleComponent: React.FC<MessageBubbleProps> = ({
           </View>
         )}
 
-        {/* Image Attachment Preview */}
-        {hasImage && message.imageUri && (
-          <Pressable
-            onPress={() => onOpenImage && onOpenImage(message.imageUri!)}
-            style={[styles.imageFrame, { width: displayWidth, height: displayHeight }]}
-          >
-            <Image source={{ uri: message.imageUri }} style={{ width: displayWidth, height: displayHeight, borderRadius: 14 }} resizeMode="cover" />
-            <View style={styles.viewBadge}>
-              <Ionicons name="expand-outline" size={10} color="#ffffff" />
-              <Text style={styles.viewBadgeText}>View</Text>
+        {/* Image / Document Attachment Preview */}
+        {message.imageUri && (
+          message.mimeType?.startsWith('image/') || !message.mimeType ? (
+            <Pressable
+              onPress={() => onOpenImage && onOpenImage(message.imageUri!)}
+              style={[styles.imageFrame, { width: displayWidth, height: displayHeight }]}
+            >
+              <Image source={{ uri: message.imageUri }} style={{ width: displayWidth, height: displayHeight, borderRadius: 14 }} resizeMode="cover" />
+              <View style={styles.viewBadge}>
+                <Ionicons name="expand-outline" size={10} color="#ffffff" />
+                <Text style={styles.viewBadgeText}>View</Text>
+              </View>
+            </Pressable>
+          ) : (
+            <View style={[styles.docMsgCard, { backgroundColor: isUser ? 'rgba(255,255,255,0.15)' : 'rgba(99,102,241,0.08)' }]}>
+              <View style={styles.docMsgBadge}>
+                <Ionicons name="document-text" size={18} color={isUser ? '#ffffff' : '#6366f1'} />
+              </View>
+              <View style={styles.docMsgTextCol}>
+                <Text numberOfLines={1} style={[styles.docMsgName, { color: isUser ? '#ffffff' : '#0f172a' }]}>
+                  {message.fileName || 'Attached Document'}
+                </Text>
+                <Text style={[styles.docMsgSub, { color: isUser ? '#e0e7ff' : '#64748b' }]}>
+                  {message.mimeType?.includes('pdf')
+                    ? 'PDF Document'
+                    : message.mimeType?.includes('word') || message.fileName?.endsWith('.docx')
+                    ? 'Word Document'
+                    : 'Attached File'}
+                </Text>
+              </View>
             </View>
-          </Pressable>
+          )
         )}
 
         {/* Markdown & Text Content */}
@@ -452,6 +473,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     marginLeft: 4,
+  },
+  docMsgCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 14,
+    marginBottom: 8,
+    gap: 10,
+  },
+  docMsgBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(99,102,241,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docMsgTextCol: {
+    flex: 1,
+  },
+  docMsgName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  docMsgSub: {
+    fontSize: 10,
+    marginTop: 1,
   },
 });
 

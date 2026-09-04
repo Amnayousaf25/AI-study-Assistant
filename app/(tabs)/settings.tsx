@@ -1,12 +1,12 @@
-import React, { useCallback } from 'react';
-import { View, Text, Pressable, Switch, Platform, Alert, ScrollView } from 'react-native';
+import React, { useCallback, useState, useEffect } from 'react';
+import { View, Text, Pressable, Switch, Platform, Alert, ScrollView, TextInput, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   useChat,
   GEMINI_MODEL,
-  GEMINI_API_KEY,
   API_KEY_PLACEHOLDER,
+  getEffectiveApiKey,
 } from '../../src/context/ChatContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import {
@@ -33,9 +33,29 @@ export default function SettingsTab() {
     favorites,
     totalMessagesCount,
     handleClearAllConversations,
+    userApiKey,
+    updateApiKey,
   } = useChat();
 
-  const isConfigured = Boolean(GEMINI_API_KEY && GEMINI_API_KEY !== API_KEY_PLACEHOLDER);
+  const [inputKey, setInputKey] = useState('');
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+
+  const effectiveKey = getEffectiveApiKey();
+  const isConfigured = Boolean(effectiveKey && effectiveKey !== API_KEY_PLACEHOLDER && effectiveKey.length > 10);
+
+  useEffect(() => {
+    setInputKey(userApiKey);
+  }, [userApiKey]);
+
+  const handleSaveApiKey = useCallback(async () => {
+    await updateApiKey(inputKey.trim());
+    setSaveSuccessMsg('API Key saved successfully!');
+    setTimeout(() => setSaveSuccessMsg(''), 3000);
+  }, [inputKey, updateApiKey]);
+
+  const handleOpenAiStudio = useCallback(() => {
+    Linking.openURL('https://aistudio.google.com/app/apikey');
+  }, []);
 
   const confirmResetData = useCallback(() => {
     if (Platform.OS === 'web') {
@@ -156,13 +176,37 @@ export default function SettingsTab() {
             </View>
           </View>
 
-          {/* AI Engine Status */}
+          {/* AI Engine Status & Key Setup */}
           <View className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-4 shadow-xs">
-            <Text className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">
-              AI Engine Diagnostics
-            </Text>
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                AI Engine & Key Setup
+              </Text>
+              <View
+                className={`px-2 py-0.5 rounded-lg flex-row items-center ${
+                  isConfigured
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800'
+                    : 'bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800'
+                }`}
+              >
+                <View
+                  className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                    isConfigured ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                />
+                <Text
+                  className={`text-xs font-bold ${
+                    isConfigured
+                      ? 'text-emerald-700 dark:text-emerald-300'
+                      : 'text-amber-700 dark:text-amber-300'
+                  }`}
+                >
+                  {isConfigured ? 'Active & Ready' : 'Key Missing / Setup Needed'}
+                </Text>
+              </View>
+            </View>
 
-            <View className="space-y-2.5 gap-2.5">
+            <View className="space-y-3 gap-3">
               <View className="flex-row items-center justify-between py-1 border-b border-slate-100 dark:border-slate-800 pb-2">
                 <Text className="text-xs text-slate-500 dark:text-slate-400 font-medium">Model</Text>
                 <View className="bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-100 dark:border-indigo-800 px-2 py-0.5 rounded-lg">
@@ -172,41 +216,42 @@ export default function SettingsTab() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between py-1 border-b border-slate-100 dark:border-slate-800 pb-2">
-                <Text className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                  API Key Status
+              <View>
+                <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Google Gemini API Key
                 </Text>
-                <View
-                  className={`px-2 py-0.5 rounded-lg flex-row items-center ${
-                    isConfigured
-                      ? 'bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800'
-                      : 'bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800'
-                  }`}
-                >
-                  <View
-                    className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                      isConfigured ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`}
+                <View className="flex-row items-center space-x-2 gap-2">
+                  <TextInput
+                    value={inputKey}
+                    onChangeText={setInputKey}
+                    placeholder="Paste AIzaSy... API key here"
+                    placeholderTextColor="#94a3b8"
+                    secureTextEntry
+                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                   />
-                  <Text
-                    className={`text-xs font-bold ${
-                      isConfigured
-                        ? 'text-emerald-700 dark:text-emerald-300'
-                        : 'text-amber-700 dark:text-amber-300'
-                    }`}
+                  <Pressable
+                    onPress={handleSaveApiKey}
+                    className="bg-indigo-600 active:bg-indigo-700 px-3.5 py-2 rounded-xl"
                   >
-                    {isConfigured ? 'Active & Ready' : 'Key Missing'}
-                  </Text>
+                    <Text className="text-xs font-bold text-white">Save Key</Text>
+                  </Pressable>
                 </View>
-              </View>
 
-              <View className="flex-row items-center justify-between py-1">
-                <Text className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                  Multimodal Input
-                </Text>
-                <Text className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Text + Camera / Gallery
-                </Text>
+                {saveSuccessMsg ? (
+                  <Text className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
+                    {saveSuccessMsg}
+                  </Text>
+                ) : null}
+
+                <View className="flex-row items-center justify-between mt-2 pt-1">
+                  <Pressable onPress={handleOpenAiStudio}>
+                    <Text className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 underline">
+                      Get free Gemini API Key from Google AI Studio →
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
           </View>

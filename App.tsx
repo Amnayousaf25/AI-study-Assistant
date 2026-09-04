@@ -46,7 +46,7 @@ class GeminiRequestError extends Error {
 }
 
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+const GEMINI_MODEL = 'gemini-2.0-flash';
 const API_KEY_PLACEHOLDER = 'YOUR_GEMINI_API_KEY';
 const MAX_CONVERSATION_MESSAGES = 12;
 const GEMINI_CONFIGURATION_MESSAGE =
